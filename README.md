@@ -20,93 +20,58 @@ A keyboard-driven terminal UI for visualising and managing Docker resources like
 - **Power-user exec & copy** — a custom exec command with a chosen user, `docker cp` in/out of a container, and an on-demand `docker top` process snapshot, all via quick prompts.
 - **Full control log viewer** — live follow, in-log search, timestamps, configurable tail/`--since`, and mouse drag-to-select text to copy (`Ctrl+C`).
 - **Operational signals at a glance** — colour-coded health, uptime and restart count, plus recent health-check probe output in the detail pane.
-- **Disk usage** — a `docker system df` breakdown (per-type size + reclaimable) on demand.
 - **In-app context switching** — list and switch Docker contexts from inside the TUI (`D`), remembered across restarts.
 - **Auto-reconnect** — if the daemon goes down mid-session, DockSurf reconnects and refreshes on its own the moment it's back.
 
 ## Requirements
 
 - A reachable Docker daemon (local, or a remote one via `docker context`)
-- Python 3.11+ and [`uv`](https://github.com/astral-sh/uv) — not needed if you're using the [standalone binary](#install)
-- The `docker` CLI on `PATH` — only needed for exec-shell (`e`/`E`), Compose project actions (`u`/`k`), and file copy (`C`); everything else uses the SDK. DockSurf degrades gracefully if it's absent.
+- The `docker` CLI on `PATH` only needed for exec-shell (`e`/`E`), Compose project actions (`ctrl+u`/`ctrl+k`), and file copy (`C`); everything else uses the SDK. DockSurf degrades gracefully if it's absent.
 
 ## Install
-
-See [QUICKSTART.md](https://github.com/praneeth-etta/docksurf/blob/main/QUICKSTART.md) for install + first steps in under 2 minutes.
-
-**From [PyPI](https://pypi.org/project/docksurf/):**
 
 ```bash
 pip install docksurf
 docksurf
 ```
 
-Or run it without installing, via [`uvx`](https://docs.astral.sh/uv/guides/tools/):
+Or without installing: `uvx docksurf`. Standalone binaries (no Python required) are on the [latest release](https://github.com/praneeth-etta/docksurf/releases/latest) releases are published via a tagged GitHub Actions workflow using PyPI Trusted Publishing (OIDC, no stored credentials).
 
-```bash
-uvx docksurf
-```
+Full install options (pip/uvx/binary/source) and a first run in under 2 minutes: see [QUICKSTART.md](https://github.com/praneeth-etta/docksurf/blob/main/QUICKSTART.md).
 
-**Standalone binary** (no Python/pip/uv required) — download the file for your OS from the [latest release](https://github.com/praneeth-etta/docksurf/releases/latest):
+## Usage
 
-- Linux: `docksurf-linux-x86_64`
-- macOS (Apple Silicon): `docksurf-macos-arm64`
-- Windows: `docksurf-windows-x86_64.exe`
+Launch `docksurf` and you land on the Containers tab, cursor on the first row.
 
-```bash
-chmod +x docksurf-linux-x86_64   # or the macOS binary you downloaded
-sudo mv docksurf-linux-x86_64 /usr/local/bin/docksurf
-docksurf
-```
+- **Move around** — `↑`/`↓` between rows, `Tab` to switch panels, `1`-`4` (or `[`/`]`) to jump tabs.
+- **Act on a container** — `s`/`S`/`x` to stop/start/restart, `p` to pause, `K` to kill, `e` to exec a shell in, `l` to tail its logs live.
+- **Find something** — `/` to search/filter the active tab.
+- **Do it in bulk** — `space` to mark rows across the tab, then `d` to stop/remove them together.
+- **Dig deeper** — `i` for the raw `docker inspect` JSON, `Y` to copy a resource's details to the clipboard.
+- **Everything else** — `?` opens the in-app help screen with every binding, scoped to whatever you're focused on.
 
-On Windows, just run the `.exe` directly — no `chmod`/`mv` step needed.
+| Key            | Action                                                    |
+| -------------- | --------------------------------------------------------- |
+| `?`            | Help screen with every keybinding, in-app                 |
+| `r`            | Refresh all Docker data                                   |
+| `/`            | Search / filter the active tab                            |
+| `↑`/`↓`, `Tab` | Navigate rows / switch tabs                               |
+| `1`-`4`        | Jump directly to Containers / Images / Volumes / Networks |
+| `s`/`S`/`x`    | Stop / start / restart (Containers tab)                   |
+| `e`            | Exec shell into the focused container                     |
+| `l`            | Toggle log viewer                                         |
+| `space`        | Mark for a bulk action                                    |
+| `d`            | Delete the selected (or marked) resource                  |
+| `i`            | Inspect (raw `docker inspect` JSON)                       |
+| `P`            | Prune menu                                                |
+| `D`            | Switch Docker context                                     |
+| `q`            | Quit                                                      |
 
-**From source** (for development, or to run an unreleased change):
-
-```bash
-git clone <repo>
-cd docksurf
-
-uv venv && source .venv/bin/activate
-uv pip install -e .
-
-docksurf
-```
-
-Or without installing:
-
-```bash
-uv run python -m docksurf_py.app
-```
-
-## Releases
-
-Published to PyPI via a tag-triggered GitHub Actions workflow (`.github/workflows/publish.yml`): pushing a `vX.Y.Z` tag builds the package and publishes it using [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no stored credentials), gated behind a manual approval step. See [CHANGELOG.md](https://github.com/praneeth-etta/docksurf/blob/main/CHANGELOG.md) for what's in each release.
-
-## Keybindings
-
-The essentials — full reference (per-tab keys, log pane, Compose header behaviour) lives in [KEYBINDINGS.md](https://github.com/praneeth-etta/docksurf/blob/main/KEYBINDINGS.md).
-
-| Key          | Action                                                 |
-|--------------|----------------------------------------------------------|
-| `?`          | Help screen — every keybinding, in-app                   |
-| `r`          | Refresh all Docker data                                  |
-| `/`          | Search / filter the active tab                           |
-| `↑/↓`, `Tab` | Navigate rows / switch tabs                              |
-| `1`-`4`      | Jump directly to Containers / Images / Volumes / Networks |
-| `s`/`S`/`x`  | Stop / start / restart (Containers tab)                  |
-| `e`          | Exec shell into the focused container                    |
-| `l`          | Toggle log viewer                                        |
-| `space`      | Mark for a bulk action                                   |
-| `d`          | Delete the selected — or marked — resource(s)            |
-| `i`          | Inspect (raw `docker inspect` JSON)                      |
-| `P`          | Prune menu                                               |
-| `D`          | Switch Docker context                                    |
-| `q`          | Quit                                                     |
+Full per-tab reference (log pane keys, Compose header behaviour, everything else): [KEYBINDINGS.md](https://github.com/praneeth-etta/docksurf/blob/main/KEYBINDINGS.md).
 
 ## Tabs
 
-Every tab has a leading mark column (`space` to toggle) for multi-select + bulk actions — see [Keybindings](#keybindings).
+Every tab has a leading mark column (`space` to toggle) for multi-select + bulk actions — see [Usage](#usage).
 
 **Containers** — all containers (running and stopped), **grouped by Compose project** into a collapsible tree, with standalone containers below. Columns: name (with a colour-coded status dot) and image. The detail pane adds status, health, uptime, restart count, ports, networks, env vars, health-probe history, live CPU/mem/net/block-IO stats, and an on-demand `docker top` snapshot (`t`). For a Compose service, `B` rebuilds and recreates just that container, streamed live.
 
@@ -116,42 +81,12 @@ Every tab has a leading mark column (`space` to toggle) for multi-select + bulk 
 
 **Networks** — all networks with driver and scope. Detail pane shows driver, scope, subnet, gateway, and each attached container's IP/MAC within the network. Create networks (`+`) and connect/disconnect containers (`v`/`m`).
 
-## Architecture
+## How it works
 
-Strict layering: `models.py` and `constants.py` are leaf modules nothing imports into. All Docker I/O lives in `docker/` (via the [Docker SDK for Python](https://docker-py.readthedocs.io/)) behind a `DockerService` protocol, so it's swappable in tests. `widgets/` is presentation-only, with no Docker knowledge. `renderer/`, `actions/`, `search.py`, and `observability.py` compose into the app itself — table rendering, resource actions, search, and live stats/`docker top` — driven by a single per-tab resource registry rather than branching on resource type throughout.
+`docker/` owns all Docker I/O through the [Docker SDK for Python](https://docker-py.readthedocs.io/), with three narrow subprocess exceptions where the SDK has no equivalent: interactive exec-shell (needs a real TTY), Compose project actions (docker-py has no Compose support), and `docker cp` (its directory/trailing-slash semantics aren't worth reproducing over raw tar archives). `widgets/` is pure presentation with no Docker knowledge of its own. Resource lists are fetched in parallel and kept live via `docker events` (debounced, selection-preserving) rather than polling; stats and logs stream straight from the SDK, with a Compose project's logs merged and colour-coded per service.
 
-## How data is fetched
-
-DockSurf talks to Docker through the SDK (`docker-py`), not the CLI — with three sanctioned exceptions, all guarded on the `docker` CLI being present: interactive **exec-shell** (needs a real TTY), **Compose project actions** (docker-py has no Compose support), and **file copy** (`docker cp` semantics aren't worth reproducing over the SDK's raw tar archives).
-
-Resource lists are fetched in parallel on every refresh and kept live via `docker events` (debounced, selection-preserving); stats and logs stream straight from the SDK, with a Compose project's logs merged and colour-coded per service.
-
-## Docker contexts — local and remote
-
-DockSurf connects to whatever daemon your active Docker context points at (matching the `docker` CLI's precedence: `DOCKER_HOST` → active context → default socket). That doesn't have to be your local machine, and — since context switching now happens in-app — it doesn't require restarting DockSurf either.
-
-**Creating a context** is still a `docker` CLI step (DockSurf lists and switches contexts, it doesn't create them):
-
-```bash
-# A context pointing at a remote Linux host over SSH — any host with a
-# reachable Docker daemon and SSH access works: a cloud VM, a bare-metal
-# box, a Raspberry Pi, a home server.
-docker context create prod --docker "host=ssh://user@prod.example.com"
-
-# Or over plain TCP, if the daemon's API is exposed that way
-docker context create staging --docker "host=tcp://staging.example.com:2375"
-```
-
-**Switching contexts from inside DockSurf** — press `D` to list every context `docker context ls` knows about and pick one. This is in-app only: it never runs `docker context use`, so it doesn't touch `~/.docker/config.json` or repoint any other terminal's `docker`/`docker compose` — DockSurf just opens its own connection to the chosen context's daemon. The choice is remembered across restarts (`~/.local/share/docksurf/state.json`).
-
-**Auto-reconnect** — if the daemon your active context points at goes down mid-session (VM reboot, daemon restart, network blip), the status bar flags it immediately (`● <reason>`) and DockSurf retries on its own every couple of seconds, reconnecting and refreshing the moment it's back — no restart, no manual `r`.
-
-Works with any endpoint that speaks the **Docker Engine API** — a plain Linux daemon, Docker Desktop, Colima, Rancher Desktop, or a remote host over SSH/TCP. Managed platforms without that API can't be reached this way even with a custom context.
+DockSurf also honours whatever `docker context` you're on — matching the `docker` CLI's own precedence (`DOCKER_HOST` → active context → default socket) — so it works against a local daemon, Docker Desktop, Colima, or a remote host over SSH/TCP with no extra config. Switching contexts in-app (`D`) never touches `~/.docker/config.json` — DockSurf just opens its own connection elsewhere — and the choice is remembered across restarts. If the daemon goes down mid-session, DockSurf retries on its own and reconnects the moment it's back.
 
 ## Logging
 
-App logs are written to `~/.local/share/docksurf/docksurf.log` — never to stdout (which belongs to the TUI). Useful for debugging refresh errors, failed Docker API calls, container/Compose action results, and stream lifecycle events.
-
-## Changelog
-
-See [CHANGELOG.md](https://github.com/praneeth-etta/docksurf/blob/main/CHANGELOG.md) for release history.
+App logs go to `~/.local/share/docksurf/docksurf.log`, never stdout (which belongs to the TUI), useful when debugging refresh errors, failed Docker API calls, or connection issues.
