@@ -16,7 +16,21 @@
 
 TabbedContent {
     width: 40%;
+    height: 100%;
     border-right: solid $primary-background-lighten-2;
+}
+
+/* Height configuration for tab content and tables. */
+TabbedContent ContentSwitcher {
+    height: 1fr;
+}
+
+TabbedContent TabPane {
+    height: 100%;
+}
+
+TabbedContent DataTable {
+    height: 100%;
 }
 
 #detail-pane {
