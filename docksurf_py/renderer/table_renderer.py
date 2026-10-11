@@ -38,6 +38,9 @@ from docksurf_py.topology import _network_members
 if TYPE_CHECKING:
     from docksurf_py.app import ResourceEntry
 
+# Max chars shown in an image repository / volume name cell.
+NAME_MAX_CHARS = 30
+
 _NEEDS_SNAPSHOT_MSG = "populate with no items needs a snapshot"
 
 
@@ -73,6 +76,17 @@ def _status_dot(color: str) -> str:
     """Colored bullet prefixed to a Name cell — an at-a-glance state
     indicator so users don't need to scroll a wide table to see Status."""
     return f"[{color}]●[/]"
+
+
+def _truncate(text: str, limit: int, middle: bool = False) -> str:
+    """Shorten `text` to at most `limit` chars"""
+    if len(text) <= limit:
+        return text
+    if not middle:
+        return text[: limit - 1] + "…"
+    head = limit // 2
+    tail = limit - 1 - head
+    return text[:head] + "…" + (text[-tail:] if tail else "")
 
 
 def _safe_row(table: DataTable, *values) -> None:
@@ -249,7 +263,7 @@ class TableRenderer(_Base):
             label = col
             if sort_state is not None and sort_state[0] == col:
                 label = f"{col} {'▼' if sort_state[1] else '▲'}"
-            table.add_column(label)
+            table.add_column(label, width=entry.column_widths.get(col))
 
     def _on_header_selected(self, event: DataTable.HeaderSelected) -> None:
         """Handle a header click and toggle that column's sort.
@@ -356,9 +370,15 @@ class TableRenderer(_Base):
         `_apply_filter` (with the current query, empty when the bar is closed)
         clears and repopulates whichever tab is active — used after a mark-clear
         or a bulk action, where several rows' mark cells changed at once.
+
+        `DataTable.clear()` resets cursor to row 0, focused row's identity is
+        captured first and restored afterwards.
         """
+        active = self.query_one(TabbedContent).active
+        focus_key = self._focused_row_key(active)
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
         self._apply_filter(search_bar.value if search_bar.display else "")
+        self._restore_selection(active, focus_key)
 
     def _rerender_containers(self) -> None:
         """Re-run the container populate honouring any active search filter.
@@ -379,8 +399,8 @@ class TableRenderer(_Base):
             _safe_row(
                 table,
                 _mark_cell(marked, self._row_key(i)),
-                i.repository,
-                i.tag,
+                _truncate(i.repository, NAME_MAX_CHARS),
+                _truncate(i.tag, 10),
                 format_size(i.size_bytes),
                 _image_status_markup(i.used_by),
             )
@@ -395,7 +415,7 @@ class TableRenderer(_Base):
         marked = self._marked[TabID.VOLUMES]
         for v in items:
             status = markup_green("In Use") if v.used_by else markup_yellow("Orphaned")
-            raw = v.name[:50] + "..." if len(v.name) > 50 else v.name
+            raw = _truncate(v.name, NAME_MAX_CHARS, middle=True)
             size_bytes = self._volume_sizes.get(v.name)
             # Computed on-demand only (`b`) — never on the snapshot path, it's
             # too slow to fetch on every refresh (see `DockerClient.volume_sizes`).

@@ -7,7 +7,7 @@ key bindings, and wires the on_mount / action_refresh entry points.
 
 import argparse
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
@@ -153,6 +153,7 @@ class ResourceEntry:
     matches: Callable[[Any, str], bool]
     plan_delete: Callable[[Any], DeletePlan | None]
     sort_keys: dict[str, Callable[[Any], Any]]
+    column_widths: dict[str, int] = field(default_factory=dict)
 
 
 class AppContext(Protocol):
@@ -204,6 +205,10 @@ class AppContext(Protocol):
     def _get_focused_project(self) -> Any: ...
     def _focused_is_project_header(self) -> bool: ...
     def _row_key(self, item: Any) -> tuple[str, str] | None: ...
+    def _focused_row_key(self, tab_id: TabID) -> tuple[str, str] | None: ...
+    def _restore_selection(
+        self, tab_id: TabID, focus_key: tuple[str, str] | None
+    ) -> None: ...
     def _marked_items(self, tab_id: TabID) -> list[Any]: ...
     def _run_bulk(
         self,
@@ -372,6 +377,7 @@ class DockSurfApp(
                     "Size": lambda i: i.size_bytes,
                     "Status": lambda i: bool(i.used_by),
                 },
+                column_widths={"Tag": 10, "Size": 9, "Status": 8},
             ),
             TabID.VOLUMES: ResourceEntry(
                 table_id=TableID.VOLUMES,
@@ -387,6 +393,7 @@ class DockSurfApp(
                     "Size": lambda v: self._volume_sizes.get(v.name, -1),
                     "Status": lambda v: bool(v.used_by),
                 },
+                column_widths={"Size": 9, "Status": 9},
             ),
             TabID.NETWORKS: ResourceEntry(
                 table_id=TableID.NETWORKS,

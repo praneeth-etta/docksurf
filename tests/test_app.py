@@ -743,6 +743,26 @@ class ComposeGroupingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(collapsed_rows), full_rows - 2)
             self.assertIn("myapp", app._collapsed_projects)
 
+    async def test_toggle_group_keeps_cursor_on_focused_row(self) -> None:
+        """Regression: collapsing/expanding re-populates the table"""
+        app = DockSurfApp(docker=MockDockerService(_compose_snapshot))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
+
+            # Focus the standalone row (last), then re-render as a toggle does.
+            last = len(app._current[TabID.CONTAINERS]) - 1
+            table.move_cursor(row=last)
+            focused = app._get_focused_resource(TabID.CONTAINERS)
+            app._collapsed_projects.add("myapp")
+            app._rerender_containers()
+            await pilot.pause()
+
+            # Two service rows are hidden, so the row index shifted by 2.
+            self.assertEqual(table.cursor_row, last - 2)
+            self.assertIs(app._get_focused_resource(TabID.CONTAINERS), focused)
+
     async def test_delete_on_project_header_routes_to_compose_down(self) -> None:
         """Regression (BF-1): `d` on a Compose project header used to crash
         the app — `_plan_container_delete` read `.running` off a
