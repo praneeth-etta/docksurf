@@ -7,3 +7,4 @@ status.md
 dist/
 build/
 *.egg-info/
+local/
