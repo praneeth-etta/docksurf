@@ -1,7 +1,6 @@
 """ResourceDeletionHandler — confirmation dialogs and dispatched remove calls."""
 
 import logging
-from dataclasses import dataclass
 from typing import Callable
 
 from rich.markup import escape
@@ -17,34 +16,12 @@ from docksurf_py.core.models import (
     Network,
     Volume,
 )
+from docksurf_py.core.state.ops import DeletePlan, bind_delete_command
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.widgets import ConfirmDialog
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class DeletePlan:
-    """What to confirm and run to delete one focused resource.
-
-    `force_default=None` renders a plain Confirm/Cancel dialog and `command`
-    is always called with `force=False`. A `bool` shows a "Force" checkbox
-    pre-checked to that default; `command` is then called with whatever the
-    user leaves the checkbox at. Bulk delete (no interactive checkbox per
-    row) always calls `command` with the plan's own `force_default`.
-    """
-
-    confirm_message: str
-    command: Callable[[bool], CommandResult]
-    success_message: str
-    force_default: bool | None = None
-
-
-def _bind_delete_command(plan: DeletePlan, force: bool) -> Callable[[], CommandResult]:
-    """Bind a `DeletePlan.command` to a fixed `force`, for non-interactive
-    (bulk) delete jobs that can't show a per-row checkbox."""
-    return lambda: plan.command(force)
 
 
 class ResourceDeletionHandler(_Base):
@@ -219,7 +196,7 @@ class ResourceDeletionHandler(_Base):
                 continue
             name = _display_name(item)
             force = plan.force_default if plan.force_default is not None else False
-            jobs.append((key, name, _bind_delete_command(plan, force)))
+            jobs.append((key, name, bind_delete_command(plan, force)))
             names.append(name)
 
         if not jobs:

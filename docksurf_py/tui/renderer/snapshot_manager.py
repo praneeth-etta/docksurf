@@ -2,7 +2,6 @@
 
 import logging
 import threading
-from typing import Any
 
 from rich.markup import escape
 from textual import work
@@ -12,13 +11,9 @@ from textual.widgets import DataTable, Input, LoadingIndicator, Static, TabbedCo
 from docksurf_py.core.connection import ConnectionState, ConnectionStatus
 from docksurf_py.core.docker import EventStream
 from docksurf_py.core.models import (
-    ComposeProject,
-    Container,
     DockerSnapshot,
-    Image,
-    Network,
-    Volume,
 )
+from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import (
     CONNECTION_BANNER_ID,
@@ -172,24 +167,8 @@ class SnapshotManager(_Base):
         self._update_empty_state(tab_id, entry, items)
         self._dirty_tabs.discard(tab_id)
 
-    @staticmethod
-    def _row_key(item: Any) -> tuple[str, str] | None:
-        """Stable identity for a row-backing object, for selection restore."""
-        if isinstance(item, Container):
-            return ("container", item.id)
-        if isinstance(item, ComposeProject):
-            return ("project", item.name)
-        if isinstance(item, Image):
-            # `get_images()` emits one row per tag, all sharing `item.id` —
-            # the tag must be part of the identity, or marking/selection
-            # restore/delete on one tag row would silently affect every tag
-            # row of the same image (BF-3).
-            return ("image", f"{item.id}|{item.repository}:{item.tag}")
-        if isinstance(item, Volume):
-            return ("volume", item.name)
-        if isinstance(item, Network):
-            return ("network", item.name)
-        return None
+    # Stable row identity; lives in core so it's testable without the app.
+    _row_key = staticmethod(row_key)
 
     def _focused_row_key(self, tab_id: TabID) -> tuple[str, str] | None:
         item = self._get_focused_resource(tab_id)

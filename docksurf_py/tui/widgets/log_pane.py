@@ -1,9 +1,8 @@
 """LogPane — inline log viewer, plus LogOptionsScreen for tail/since picking."""
 
-import re
 import threading
 from collections import deque
-from typing import Callable, Iterable, Iterator, Protocol
+from typing import Callable, Iterator, Protocol
 
 from rich.cells import cell_len
 from rich.markup import escape
@@ -19,7 +18,9 @@ from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, RichLog, Select
 
-from docksurf_py.core.types import LogLine, LogOptions, SafeMarkup
+from docksurf_py.core.render.logs import render_log_line
+from docksurf_py.core.state.logs import buffer_to_text, line_matches
+from docksurf_py.core.types import LogLine, LogOptions
 from docksurf_py.tui.ids import (
     BTN_EXPAND_ID,
     BTN_LOG_OPTIONS_CANCEL_ID,
@@ -40,51 +41,6 @@ _LOG_BUFFER_MAXLEN = 20_000
 # cross-thread dispatch under heavy log traffic, keeping the UI responsive at
 # the cost of up to ~50 ms of display latency.
 _DRAIN_INTERVAL_SECONDS = 0.05
-
-
-def _highlight_match(line: str, term: str) -> str:
-    """Return a Rich markup string with every occurrence of term highlighted."""
-    if isinstance(line, SafeMarkup):
-        return line
-    if not term:
-        return escape(line)
-    parts = re.split(f"({re.escape(term)})", line, flags=re.IGNORECASE)
-    return "".join(
-        f"[bold yellow]{escape(p)}[/]" if p.lower() == term.lower() else escape(p)
-        for p in parts
-    )
-
-
-def _render_log_line(line: LogLine, term: str, show_ts: bool) -> str:
-    """Build a Rich-markup string for one `LogLine`.
-
-    Composes an optional colour-coded service prefix (merged project logs), an
-    optional dim timestamp, the message with search matches highlighted, and a
-    dim-red wrap for stderr lines. Search-highlight is layered *inside* the
-    stderr style so matches stay visible on error lines.
-    """
-    prefix = f"[{line.color}]{escape(line.service):>14}[/] │ " if line.service else ""
-    ts = f"[dim]{escape(line.ts)}[/] " if show_ts and line.ts else ""
-    body = _highlight_match(line.text, term)
-    if line.stream == "stderr":
-        body = f"[dim red]{body}[/]"
-    return f"{prefix}{ts}{body}"
-
-
-def _buffer_to_text(lines: Iterable[LogLine], show_ts: bool = True) -> str:
-    """Flatten a log buffer to plain text for export (timestamps + markers)."""
-    out = []
-    for line in lines:
-        parts = []
-        if show_ts and line.ts:
-            parts.append(line.ts)
-        if line.service:
-            parts.append(f"{line.service} |")
-        if line.stream == "stderr":
-            parts.append("[stderr]")
-        parts.append(line.text)
-        out.append(" ".join(parts))
-    return "\n".join(out)
 
 
 class LogSource(Protocol):
@@ -357,19 +313,14 @@ class LogPane(Widget):
             event.stop()
             self._close_search()
 
-    @staticmethod
-    def _matches(line: LogLine, term: str) -> bool:
-        # Search matches on the message only, ignoring timestamp/service prefix.
-        return not term or term.lower() in line.text.lower()
-
     def _render_to_view(self) -> None:
         log_view = self._view
         log_view.clear()
         term = self._filter
         count = 0
         for line in self._line_buffer:
-            if self._matches(line, term):
-                log_view.write(_render_log_line(line, term, self._show_timestamps))
+            if line_matches(line, term):
+                log_view.write(render_log_line(line, term, self._show_timestamps))
                 if term:
                     count += 1
         self._match_count = count
@@ -381,8 +332,8 @@ class LogPane(Widget):
         return self._line_buffer.append(line)
 
     def _render_line(self, line: LogLine) -> None:
-        if self._matches(line, self._filter):
-            rendered = _render_log_line(line, self._filter, self._show_timestamps)
+        if line_matches(line, self._filter):
+            rendered = render_log_line(line, self._filter, self._show_timestamps)
             self._view.write(rendered)
             if self._filter:
                 self._match_count += 1
@@ -431,7 +382,7 @@ class LogPane(Widget):
 
     def export_text(self) -> str:
         """The full buffer as plain text (timestamps + stderr markers)."""
-        return _buffer_to_text(self._line_buffer, show_ts=True)
+        return buffer_to_text(self._line_buffer, show_ts=True)
 
     def set_options(self, options: LogOptions) -> None:
         """Apply new tail/since options — re-subscribes the stream from scratch."""

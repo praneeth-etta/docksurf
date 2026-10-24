@@ -39,13 +39,19 @@ from docksurf_py.core.models import (
 from docksurf_py.core.paths import DATA_DIR
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.session import SessionState, load_session, save_session
+from docksurf_py.core.state.ops import DeletePlan
+from docksurf_py.core.state.tables import (
+    matches_container,
+    matches_image,
+    matches_network,
+    matches_volume,
+)
 from docksurf_py.core.types import LogOptions, TabID
 from docksurf_py.tui.actions import (
     ClipboardHandler,
     ComposeActionHandler,
     ContainerActionHandler,
     ContextActionHandler,
-    DeletePlan,
     ImageActionHandler,
     InspectHandler,
     NetworkActionHandler,
@@ -73,13 +79,7 @@ from docksurf_py.tui.renderer import (
     SnapshotManager,
     TableRenderer,
 )
-from docksurf_py.tui.search import (
-    ResourceSearchController,
-    _matches_container,
-    _matches_image,
-    _matches_network,
-    _matches_volume,
-)
+from docksurf_py.tui.search import ResourceSearchController
 from docksurf_py.tui.themes import CUSTOM_THEMES, DEFAULT_THEME_NAME, THEME_CYCLE_NAMES
 from docksurf_py.tui.widgets import (
     ConnectionIndicator,
@@ -359,7 +359,7 @@ class DockSurfApp(
                 snapshot_items=lambda snap: snap.containers,
                 populate=self._populate_container_table,
                 show_details=self._show_container_details,
-                matches=_matches_container,
+                matches=matches_container,
                 plan_delete=self._plan_container_delete,
                 sort_keys={
                     "Name": lambda c: c.name.lower(),
@@ -373,7 +373,7 @@ class DockSurfApp(
                 snapshot_items=lambda snap: snap.images,
                 populate=self._populate_image_table,
                 show_details=self._show_image_details,
-                matches=_matches_image,
+                matches=matches_image,
                 plan_delete=self._plan_image_delete,
                 sort_keys={
                     "Repository": lambda i: i.repository.lower(),
@@ -390,7 +390,7 @@ class DockSurfApp(
                 snapshot_items=lambda snap: snap.volumes,
                 populate=self._populate_volume_table,
                 show_details=self._show_volume_details,
-                matches=_matches_volume,
+                matches=matches_volume,
                 plan_delete=self._plan_volume_delete,
                 sort_keys={
                     "Name": lambda v: v.name.lower(),
@@ -406,7 +406,7 @@ class DockSurfApp(
                 snapshot_items=lambda snap: snap.networks,
                 populate=self._populate_network_table,
                 show_details=self._show_network_details,
-                matches=_matches_network,
+                matches=matches_network,
                 sort_keys={
                     "Name": lambda n: n.name.lower(),
                     "Driver": lambda n: n.driver.lower(),

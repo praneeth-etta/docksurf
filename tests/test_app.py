@@ -1721,7 +1721,7 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             await self._open_logs(app, pilot)
-            with patch("docksurf_py.tui.actions.container._write_log_export") as writer:
+            with patch("docksurf_py.tui.actions.container.write_log_export") as writer:
                 writer.return_value = "/tmp/web-x.log"
                 app.action_export_logs()
             self.assertTrue(writer.called)

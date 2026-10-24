@@ -3,13 +3,9 @@
 import asyncio
 import logging
 import platform
-import re
-import shlex
 import shutil
 import subprocess
 import webbrowser
-from datetime import datetime
-from pathlib import Path
 from typing import Callable
 
 from rich.markup import escape
@@ -23,7 +19,13 @@ from docksurf_py.core.models import (
     ContainerDetail,
     PortBinding,
 )
-from docksurf_py.core.paths import DATA_DIR
+from docksurf_py.core.state.logs import write_log_export
+from docksurf_py.core.state.ops import (
+    EXEC_SHELL_CANDIDATES,
+    build_cp_paths,
+    build_exec_argv,
+    select_exec_shell,
+)
 from docksurf_py.core.types import LogOptions, TabID
 from docksurf_py.tui.actions.common import _PROJECT_HINT, _Base
 from docksurf_py.tui.ids import DETAIL_PANE_ID, LOG_PANE_ID
@@ -37,81 +39,6 @@ from docksurf_py.tui.widgets import (
 )
 
 logger = logging.getLogger(__name__)
-
-EXEC_SHELL_CANDIDATES = ("bash", "sh")
-
-
-def _write_log_export(name: str, text: str) -> Path:
-    """Write a log buffer to the exports subdir of DATA_DIR and return the path."""
-    export_dir = DATA_DIR / "exports"
-    export_dir.mkdir(parents=True, exist_ok=True)
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_") or "logs"
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = export_dir / f"{safe}-{stamp}.log"
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
-def select_exec_shell(
-    candidates: tuple[str, ...], probe: Callable[[str], bool]
-) -> str | None:
-    """Return the first candidate shell for which `probe` succeeds, or None."""
-    for shell in candidates:
-        if probe(shell):
-            return shell
-    return None
-
-
-def build_exec_argv(
-    container_id: str, command: str, user: str = ""
-) -> list[str] | None:
-    """Build the `docker exec` argv for a custom command/user.
-
-    Returns `None` (caller notifies) if `command` is blank or fails to parse
-    as shell tokens (e.g. unbalanced quotes).
-    """
-    command = command.strip()
-    if not command:
-        return None
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return None
-    if not tokens:
-        return None
-
-    argv = ["docker", "exec", "-it"]
-    if user.strip():
-        argv += ["-u", user.strip()]
-    argv += [container_id, *tokens]
-    return argv
-
-
-def build_cp_paths(c: Container, src: str, dst: str) -> tuple[str, str] | None:
-    """Resolve `PromptScreen` values into a `docker cp` src/dst pair.
-
-    `PromptScreen` is pre-filled with `<name>:` on one side (per the caller);
-    exactly one side must carry that prefix — the other is a plain host path.
-    The container-name prefix is rewritten to the container id, since that's
-    what `docker cp` (and `DockerClient.container_cp`) actually expects.
-    Returns `None` (caller notifies) on blank input or if both/neither side
-    is container-prefixed.
-    """
-    src, dst = src.strip(), dst.strip()
-    if not src or not dst:
-        return None
-
-    prefix = f"{c.name}:"
-    src_is_container = src.startswith(prefix)
-    dst_is_container = dst.startswith(prefix)
-    if src_is_container == dst_is_container:
-        return None
-
-    if src_is_container:
-        src = f"{c.id}:{src[len(prefix) :]}"
-    else:
-        dst = f"{c.id}:{dst[len(prefix) :]}"
-    return src, dst
 
 
 def _is_wsl() -> bool:
@@ -652,7 +579,7 @@ class ContainerActionHandler(_Base):
         if not log_pane.display:
             return
         try:
-            path = _write_log_export(log_pane.log_title, log_pane.export_text())
+            path = write_log_export(log_pane.log_title, log_pane.export_text())
         except OSError as e:
             logger.warning("Log export failed: %s", e)
             self.notify(f"Export failed: {e}", severity="error")

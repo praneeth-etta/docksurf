@@ -8,8 +8,8 @@ from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Button, Input, Label, RichLog
 
+from docksurf_py.core.render.logs import highlight_match
 from docksurf_py.tui.ids import BTN_INSPECT_CLOSE_ID, INSPECT_SEARCH_ID, INSPECT_VIEW_ID
-from docksurf_py.tui.widgets.log_pane import _highlight_match
 
 
 class InspectScreen(ModalScreen):
@@ -19,7 +19,7 @@ class InspectScreen(ModalScreen):
     the controller from `DockerClient.inspect_resource`), keeping this widget
     free of Docker/model imports — same convention as `SystemDfScreen`. The
     filter reuses `LogPane`'s line-filter idea (only matching lines shown,
-    term highlighted via the shared `_highlight_match`) since JSON dumps can
+    term highlighted via the shared `highlight_match`) since JSON dumps can
     be long. `/` opens the filter, Escape closes the filter then the screen,
     and `i` — the key that opened this screen — closes it outright as long as
     the filter isn't the focused widget (so typing "i" into the filter just
@@ -54,7 +54,7 @@ class InspectScreen(ModalScreen):
         term = self._filter
         for line in self._lines:
             if not term or term.lower() in line.lower():
-                log_view.write(_highlight_match(line, term))
+                log_view.write(highlight_match(line, term))
 
     @on(Input.Changed, f"#{INSPECT_SEARCH_ID}")
     def _on_filter_changed(self, event: Input.Changed) -> None:

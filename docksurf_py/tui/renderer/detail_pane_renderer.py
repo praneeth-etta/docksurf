@@ -11,6 +11,14 @@ from docksurf_py.core.docker import (
     format_uptime,
 )
 from docksurf_py.core.models import ComposeProject
+from docksurf_py.core.render.markup import (
+    format_health_log,
+    health_markup,
+    project_status_color,
+    project_status_markup,
+    status_color,
+    status_markup,
+)
 from docksurf_py.core.render.topology import network_topology
 from docksurf_py.core.types import (
     STATUS_GREEN,
@@ -23,14 +31,6 @@ from docksurf_py.core.types import (
     markup_yellow,
 )
 from docksurf_py.tui.renderer.common import _Base
-from docksurf_py.tui.renderer.table_renderer import (
-    _format_health_log,
-    _health_markup,
-    _project_status_color,
-    _project_status_markup,
-    _status_color,
-    _status_markup,
-)
 from docksurf_py.tui.widgets import DetailPane
 
 
@@ -78,8 +78,8 @@ class DetailPaneRenderer(_Base):
             else SafeMarkup("[dim]…[/]")
         )
         runtime = {
-            "Status": _status_markup(c),
-            "Health": _health_markup(c),
+            "Status": status_markup(c),
+            "Health": health_markup(c),
             "Uptime": uptime,
             "Restarts": restarts,
             "Exit Code": (
@@ -102,8 +102,8 @@ class DetailPaneRenderer(_Base):
             if detail
             else "…",
             env_masked=not self._reveal_secrets,
-            health_log=_format_health_log(detail.health_log) if detail else None,
-            border_style=_status_color(c),
+            health_log=format_health_log(detail.health_log) if detail else None,
+            border_style=status_color(c),
         )
         pane.clear_topology()
 
@@ -113,7 +113,7 @@ class DetailPaneRenderer(_Base):
             for c in project.containers
         )
         details = {
-            "Services": _project_status_markup(project),
+            "Services": project_status_markup(project),
             "Config File": project.config_files or "—",
             "Working Dir": project.working_dir or "—",
             "Containers": services or "None",
@@ -121,7 +121,7 @@ class DetailPaneRenderer(_Base):
         pane.update_details(
             f"Project: {project.name}",
             {"": details},
-            border_style=_project_status_color(project),
+            border_style=project_status_color(project),
         )
         pane.clear_topology()
 

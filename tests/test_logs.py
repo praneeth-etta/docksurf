@@ -4,8 +4,9 @@
 import unittest
 
 from docksurf_py.core.docker import LogStream, _split_timestamp, _strip_ansi
+from docksurf_py.core.render.logs import render_log_line
+from docksurf_py.core.state.logs import buffer_to_text
 from docksurf_py.core.types import LogLine, LogOptions
-from docksurf_py.tui.widgets import _buffer_to_text, _render_log_line
 from docksurf_py.tui.widgets.log_pane import _LOG_BUFFER_MAXLEN, LogPane
 
 
@@ -109,27 +110,27 @@ class LogStreamTests(unittest.TestCase):
 
 class RenderHelperTests(unittest.TestCase):
     def test_plain_line(self) -> None:
-        out = _render_log_line(LogLine(text="hello"), "", False)
+        out = render_log_line(LogLine(text="hello"), "", False)
         self.assertEqual(out, "hello")
 
     def test_stderr_is_dim_red(self) -> None:
-        out = _render_log_line(LogLine(text="oops", stream="stderr"), "", False)
+        out = render_log_line(LogLine(text="oops", stream="stderr"), "", False)
         self.assertEqual(out, "[dim red]oops[/]")
 
     def test_timestamp_shown_and_hidden(self) -> None:
         line = LogLine(text="hi", ts="2024-01-01T00:00:00Z")
-        self.assertIn("[dim]2024-01-01T00:00:00Z[/]", _render_log_line(line, "", True))
-        self.assertNotIn("2024", _render_log_line(line, "", False))
+        self.assertIn("[dim]2024-01-01T00:00:00Z[/]", render_log_line(line, "", True))
+        self.assertNotIn("2024", render_log_line(line, "", False))
 
     def test_service_prefix(self) -> None:
         line = LogLine(text="hi", service="web", color="cyan")
-        out = _render_log_line(line, "", False)
+        out = render_log_line(line, "", False)
         self.assertIn("[cyan]", out)
         self.assertIn("web", out)
         self.assertIn("│", out)
 
     def test_search_highlight(self) -> None:
-        out = _render_log_line(LogLine(text="hello world"), "world", False)
+        out = render_log_line(LogLine(text="hello world"), "world", False)
         self.assertIn("[bold yellow]world[/]", out)
 
 
@@ -140,7 +141,7 @@ class BufferToTextTests(unittest.TestCase):
             LogLine(text="err", ts="2024-01-01T00:00:01Z", stream="stderr"),
             LogLine(text="hi", service="web", color="cyan"),
         ]
-        text = _buffer_to_text(lines, show_ts=True)
+        text = buffer_to_text(lines, show_ts=True)
         self.assertEqual(
             text.splitlines(),
             [
@@ -152,7 +153,7 @@ class BufferToTextTests(unittest.TestCase):
 
     def test_omits_timestamps_when_disabled(self) -> None:
         lines = [LogLine(text="up", ts="2024-01-01T00:00:00Z")]
-        self.assertEqual(_buffer_to_text(lines, show_ts=False), "up")
+        self.assertEqual(buffer_to_text(lines, show_ts=False), "up")
 
 
 class LogBufferBoundTests(unittest.TestCase):

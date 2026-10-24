@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from textual.timer import Timer
 from textual.widgets import DataTable, Input, TabbedContent
 
-from docksurf_py.core.models import Container, Image, Network, Volume
 from docksurf_py.tui.ids import SEARCH_BAR_ID
 
 if TYPE_CHECKING:
@@ -20,29 +19,6 @@ else:
     # Real runtime base is `object` — `AppContext` only exists for mypy to
     # check these mixins' bodies against; see app.py's `AppContext` docstring.
     _Base = object
-
-
-def _matches_container(c: Container, q: str) -> bool:
-    return (
-        q in c.name.lower()
-        or q in c.image_name.lower()
-        or q in c.status.lower()
-        or q in c.id.lower()
-        or q in c.compose_project.lower()
-        or q in c.compose_service.lower()
-    )
-
-
-def _matches_image(i: Image, q: str) -> bool:
-    return q in (i.repository or "").lower() or q in (i.tag or "").lower()
-
-
-def _matches_volume(v: Volume, q: str) -> bool:
-    return q in v.name.lower() or q in v.driver.lower() or q in v.mountpoint.lower()
-
-
-def _matches_network(n: Network, q: str) -> bool:
-    return q in n.name.lower() or q in n.driver.lower() or q in n.subnet.lower()
 
 
 class ResourceSearchController(_Base):

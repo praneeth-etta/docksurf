@@ -12,7 +12,7 @@ from docksurf_py.core.models import (
     Container,
     HealthProbe,
 )
-from docksurf_py.tui.renderer import _group_by_project
+from docksurf_py.core.state.tables import group_by_project
 
 
 def make_container(
@@ -111,7 +111,7 @@ class GroupByProjectTests(unittest.TestCase):
             make_container("a-api", project="alpha", service="api"),
             make_container("a-db", project="alpha", service="db"),
         ]
-        projects, standalone = _group_by_project(containers)
+        projects, standalone = group_by_project(containers)
 
         # Projects sorted alphabetically by name.
         self.assertEqual([p.name for p in projects], ["alpha", "beta"])
@@ -131,12 +131,12 @@ class GroupByProjectTests(unittest.TestCase):
                 working_dir="/srv/myapp",
             )
         ]
-        projects, _ = _group_by_project(containers)
+        projects, _ = group_by_project(containers)
         self.assertEqual(projects[0].config_files, "/srv/myapp/dc.yml")
         self.assertEqual(projects[0].working_dir, "/srv/myapp")
 
     def test_no_compose_containers_yields_no_projects(self) -> None:
-        projects, standalone = _group_by_project(
+        projects, standalone = group_by_project(
             [make_container("a"), make_container("b")]
         )
         self.assertEqual(projects, [])

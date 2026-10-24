@@ -21,9 +21,6 @@ from docksurf_py.tui.widgets.log_pane import (
     LogPane,
     LogSource,
     SelectableRichLog,
-    _buffer_to_text,
-    _highlight_match,
-    _render_log_line,
 )
 from docksurf_py.tui.widgets.prune_screen import PruneScreen
 from docksurf_py.tui.widgets.pull_progress_screen import PullProgressScreen
@@ -63,7 +60,4 @@ __all__ = [
     "SearchBar",
     "StatusBar",
     "ConnectionIndicator",
-    "_highlight_match",
-    "_render_log_line",
-    "_buffer_to_text",
 ]

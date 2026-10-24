@@ -16,8 +16,8 @@ from docksurf_py.core.models import (
     DockerSnapshot,
     SystemDf,
 )
+from docksurf_py.core.render.observability import render_df, render_stats, render_top
 from docksurf_py.tui.app import DockSurfApp
-from docksurf_py.tui.observability import _render_df, _render_stats, _render_top
 from docksurf_py.tui.widgets import SystemDfScreen
 from tests.test_app import EMPTY_SNAPSHOT, MockDockerService, wait_until
 from tests.test_compose import make_container
@@ -242,20 +242,20 @@ class CreateSdkClientContextTests(unittest.TestCase):
 class RenderSmokeTests(unittest.TestCase):
     def test_render_stats_and_df_do_not_raise(self) -> None:
         stats = ContainerStats(42.0, 100, 200, 50.0, 1, 2, 3, 4)
-        self.assertIsNotNone(_render_stats(stats, "web"))
+        self.assertIsNotNone(render_stats(stats, "web"))
         df = SystemDf(
             entries=[DiskUsageEntry("Images", 1, 0, 100, 100)],
             total_size=100,
             total_reclaimable=100,
         )
-        self.assertIsNotNone(_render_df(df))
+        self.assertIsNotNone(render_df(df))
 
     def test_render_top_does_not_raise_and_uses_all_titles(self) -> None:
         top = ContainerTop(
             titles=["PID", "USER", "CMD"],
             processes=[["1", "root", "python app.py"], ["7", "root", "sh"]],
         )
-        panel = _render_top(top, "web")
+        panel = render_top(top, "web")
         self.assertIsNotNone(panel)
         table = panel.renderable
         self.assertEqual([c.header for c in table.columns], ["PID", "USER", "CMD"])
@@ -263,7 +263,7 @@ class RenderSmokeTests(unittest.TestCase):
 
     def test_render_top_handles_no_processes(self) -> None:
         top = ContainerTop(titles=["PID", "CMD"], processes=[])
-        self.assertIsNotNone(_render_top(top, "web"))
+        self.assertIsNotNone(render_top(top, "web"))
 
 
 class _OneEventStream:

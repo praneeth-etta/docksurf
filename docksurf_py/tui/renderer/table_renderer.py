@@ -1,32 +1,34 @@
 """TableRenderer — column setup and row-population for the four resource tables."""
 
 import os
-from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING
 
 from rich.markup import escape
 from textual.widgets import DataTable, Input, Static, TabbedContent
 
-from docksurf_py.core.docker import format_relative_time, format_size
+from docksurf_py.core.docker import format_size
 from docksurf_py.core.models import (
     ComposeProject,
     Container,
     ContainerDetail,
-    HealthProbe,
     Image,
     Network,
     Volume,
 )
-from docksurf_py.core.render.topology import _network_members
+from docksurf_py.core.render.markup import (
+    image_status_markup,
+    network_containers_markup,
+    project_status_color,
+    status_color,
+    status_dot,
+    truncate,
+)
 from docksurf_py.core.session import save_session
+from docksurf_py.core.state.tables import group_by_project
 from docksurf_py.core.types import (
-    STATUS_GREEN,
-    STATUS_RED,
-    STATUS_YELLOW,
     SafeMarkup,
     TabID,
     markup_green,
-    markup_red,
     markup_yellow,
 )
 from docksurf_py.tui.ids import (
@@ -46,51 +48,6 @@ NAME_MAX_CHARS = 30
 _NEEDS_SNAPSHOT_MSG = "populate with no items needs a snapshot"
 
 
-def _status_color(c: Container) -> str:
-    """The color a container's state maps to — shared by `_status_markup`
-    (Status column/field text) and `DetailPaneRenderer` (detail panel border),
-    so the two never drift apart."""
-    if c.running:
-        return STATUS_GREEN
-    if c.state in ("exited", "dead"):
-        return STATUS_RED
-    return STATUS_YELLOW  # paused, restarting, created
-
-
-def _status_markup(c: Container) -> SafeMarkup:
-    if c.running:
-        label = escape(c.status)
-        if c.health == "healthy":
-            label += " ✓"
-        elif c.health == "unhealthy":
-            label += " ✗"
-        elif c.health == "starting":
-            label += " …"
-    elif c.state in ("exited", "dead"):
-        suffix = f" ({c.exit_code})" if c.exit_code != 0 else ""
-        label = escape(c.status) + suffix
-    else:
-        label = escape(c.status)  # paused, restarting, created
-    return SafeMarkup(f"[{_status_color(c)}]{label}[/]")
-
-
-def _status_dot(color: str) -> str:
-    """Colored bullet prefixed to a Name cell — an at-a-glance state
-    indicator so users don't need to scroll a wide table to see Status."""
-    return f"[{color}]●[/]"
-
-
-def _truncate(text: str, limit: int, middle: bool = False) -> str:
-    """Shorten `text` to at most `limit` chars"""
-    if len(text) <= limit:
-        return text
-    if not middle:
-        return text[: limit - 1] + "…"
-    head = limit // 2
-    tail = limit - 1 - head
-    return text[:head] + "…" + (text[-tail:] if tail else "")
-
-
 def _safe_row(table: DataTable, *values) -> None:
     """Add a row, escaping plain strings and passing SafeMarkup through unchanged."""
     table.add_row(*(v if isinstance(v, SafeMarkup) else escape(str(v)) for v in values))
@@ -101,99 +58,6 @@ def _mark_cell(
 ) -> SafeMarkup | str:
     """Leading-column cell for a row: the mark glyph if selected, else blank."""
     return MARK_GLYPH if key is not None and key in marked else ""
-
-
-def _health_markup(c: Container) -> SafeMarkup:
-    """Colored health status for the Health column."""
-    if c.health == "healthy":
-        return markup_green("healthy")
-    if c.health == "unhealthy":
-        return markup_red("unhealthy")
-    if c.health == "starting":
-        return markup_yellow("starting")
-    return SafeMarkup("[dim]—[/]")
-
-
-def _format_health_log(log: list[HealthProbe], limit: int = 5) -> str | None:
-    """Render the most recent healthcheck probes as plain text, or None if empty.
-
-    Plain text (not markup): the detail pane escapes it like the env-vars block.
-    """
-    if not log:
-        return None
-    blocks = []
-    for probe in log[-limit:]:
-        marker = "✓ pass" if probe.exit_code == 0 else f"✗ exit {probe.exit_code}"
-        when = format_relative_time(probe.start) if probe.start else "—"
-        output = probe.output.strip() or "(no output)"
-        blocks.append(f"[{marker}]  {when}\n{output}")
-    return "\n\n".join(blocks)
-
-
-def _group_by_project(
-    containers: list[Container],
-    key: Callable[[Container], Any] | None = None,
-    reverse: bool = False,
-) -> tuple[list[ComposeProject], list[Container]]:
-    """Split containers into Compose projects (sorted) and standalone ones.
-
-    Project ordering is always alphabetical (a header isn't a sortable data
-    row). Services within a project are sorted by `key`/`reverse` when a
-    column sort is active, else by service name (the original default). A
-    project's config-file/working-dir come from its first service (they're
-    identical across a project's containers).
-    """
-    grouped: dict[str, list[Container]] = defaultdict(list)
-    standalone: list[Container] = []
-    for c in containers:
-        if c.is_compose:
-            grouped[c.compose_project].append(c)
-        else:
-            standalone.append(c)
-
-    projects: list[ComposeProject] = []
-    for name in sorted(grouped):
-        if key is not None:
-            members = sorted(grouped[name], key=key, reverse=reverse)
-        else:
-            members = sorted(grouped[name], key=lambda c: c.compose_service)
-        first = members[0]
-        projects.append(
-            ComposeProject(
-                name=name,
-                containers=members,
-                config_files=first.compose_config_files,
-                working_dir=first.compose_working_dir,
-            )
-        )
-    return projects, standalone
-
-
-def _project_status_color(project: ComposeProject) -> str:
-    return STATUS_GREEN if project.all_running else STATUS_YELLOW
-
-
-def _project_status_markup(project: ComposeProject) -> SafeMarkup:
-    summary = f"{project.running_count}/{project.total_count} running"
-    return SafeMarkup(f"[{_project_status_color(project)}]{summary}[/]")
-
-
-def _image_status_markup(used_by: list[str]) -> SafeMarkup:
-    return markup_green("In Use") if used_by else markup_yellow("Unused")
-
-
-def _network_containers_markup(
-    network: Network, containers: list[Container]
-) -> SafeMarkup:
-    """`N attached (M running)` — the same endpoint↔container join the
-    topology diagram and clipboard summary already use (`topology.py`), so
-    the count here never drifts from what expanding the network shows."""
-    members = _network_members(network, containers)
-    if not members:
-        return SafeMarkup("[dim]0[/]")
-    running = sum(1 for m in members if m.running)
-    color = STATUS_GREEN if running == len(members) else STATUS_YELLOW
-    return SafeMarkup(f"[{color}]{len(members)} ({running} running)[/]")
 
 
 class TableRenderer(_Base):
@@ -315,7 +179,7 @@ class TableRenderer(_Base):
             col_name, reverse = sort_state
             sort_key = self._resource_registry[TabID.CONTAINERS].sort_keys.get(col_name)
 
-        projects, standalone = _group_by_project(items, key=sort_key, reverse=reverse)
+        projects, standalone = group_by_project(items, key=sort_key, reverse=reverse)
         marked = self._marked[TabID.CONTAINERS]
 
         # `_current` is the row-backing list: each row index maps to either a
@@ -330,7 +194,7 @@ class TableRenderer(_Base):
                 else ""
             )
             rows.append(project)
-            dot = _status_dot(_project_status_color(project))
+            dot = status_dot(project_status_color(project))
             _safe_row(
                 table,
                 "",  # project headers can't be marked
@@ -343,7 +207,7 @@ class TableRenderer(_Base):
             for idx, c in enumerate(members):
                 rows.append(c)
                 branch = "└" if idx == len(members) - 1 else "├"
-                dot = _status_dot(_status_color(c))
+                dot = status_dot(status_color(c))
                 name = SafeMarkup(
                     f"  {branch} {dot} {escape(c.compose_service or c.name)}"
                 )
@@ -356,7 +220,7 @@ class TableRenderer(_Base):
 
         for c in standalone:
             rows.append(c)
-            dot = _status_dot(_status_color(c))
+            dot = status_dot(status_color(c))
             _safe_row(
                 table,
                 _mark_cell(marked, self._row_key(c)),
@@ -401,10 +265,10 @@ class TableRenderer(_Base):
             _safe_row(
                 table,
                 _mark_cell(marked, self._row_key(i)),
-                _truncate(i.repository, NAME_MAX_CHARS),
-                _truncate(i.tag, 10),
+                truncate(i.repository, NAME_MAX_CHARS),
+                truncate(i.tag, 10),
                 format_size(i.size_bytes),
-                _image_status_markup(i.used_by),
+                image_status_markup(i.used_by),
             )
 
     def _populate_volume_table(
@@ -417,7 +281,7 @@ class TableRenderer(_Base):
         marked = self._marked[TabID.VOLUMES]
         for v in items:
             status = markup_green("In Use") if v.used_by else markup_yellow("Orphaned")
-            raw = _truncate(v.name, NAME_MAX_CHARS, middle=True)
+            raw = truncate(v.name, NAME_MAX_CHARS, middle=True)
             size_bytes = self._volume_sizes.get(v.name)
             # Computed on-demand only (`b`) — never on the snapshot path, it's
             # too slow to fetch on every refresh (see `DockerClient.volume_sizes`).
@@ -444,7 +308,7 @@ class TableRenderer(_Base):
                 n.name,
                 n.driver,
                 n.scope,
-                _network_containers_markup(n, containers),
+                network_containers_markup(n, containers),
             )
 
     def _sort_items(self, tab_id: TabID, entry: "ResourceEntry", items: list) -> list:
