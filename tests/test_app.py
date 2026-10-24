@@ -20,43 +20,10 @@ from textual.widgets import (
     TabbedContent,
 )
 
-from docksurf_py.actions import (
-    ContainerActionHandler,
-    ImageActionHandler,
-    NetworkActionHandler,
-    VolumeActionHandler,
-    _open_in_browser,
-)
-from docksurf_py.actions.clipboard import _yank_fields
-from docksurf_py.app import (
-    DockSurfApp,
-    _compose_actions,
-    _container_only_actions,
-    _tab_actions,
-)
-from docksurf_py.config import Config
-from docksurf_py.connection import ConnectionState, ConnectionStatus
-from docksurf_py.constants import (
-    BTN_EXPAND_ID,
-    CONFIRM_FORCE_CHECKBOX_ID,
-    CONNECTION_BANNER_ID,
-    CONNECTION_INDICATOR_ID,
-    DETAIL_PANE_ID,
-    EMPTY_STATE_IDS,
-    INSPECT_SEARCH_ID,
-    INSPECT_VIEW_ID,
-    LOG_PANE_HEADER_ID,
-    LOG_PANE_ID,
-    PULL_PROGRESS_VIEW_ID,
-    SEARCH_BAR_ID,
-    STATUS_BAR_ID,
-    LogLine,
-    LogOptions,
-    TabID,
-    TableID,
-)
-from docksurf_py.docker import EventStream, StatsStream
-from docksurf_py.models import (
+from docksurf_py.core.config import Config
+from docksurf_py.core.connection import ConnectionState, ConnectionStatus
+from docksurf_py.core.docker import EventStream, StatsStream
+from docksurf_py.core.models import (
     CommandResult,
     ComposeProject,
     Container,
@@ -72,9 +39,44 @@ from docksurf_py.models import (
     SystemDf,
     Volume,
 )
-from docksurf_py.session import SessionState
-from docksurf_py.topology import _network_members, _network_summary, network_topology
-from docksurf_py.widgets import (
+from docksurf_py.core.render.topology import (
+    _network_members,
+    _network_summary,
+    network_topology,
+)
+from docksurf_py.core.session import SessionState
+from docksurf_py.core.types import LogLine, LogOptions, TabID
+from docksurf_py.tui.actions import (
+    ContainerActionHandler,
+    ImageActionHandler,
+    NetworkActionHandler,
+    VolumeActionHandler,
+    _open_in_browser,
+)
+from docksurf_py.tui.actions.clipboard import _yank_fields
+from docksurf_py.tui.app import (
+    DockSurfApp,
+    _compose_actions,
+    _container_only_actions,
+    _tab_actions,
+)
+from docksurf_py.tui.ids import (
+    BTN_EXPAND_ID,
+    CONFIRM_FORCE_CHECKBOX_ID,
+    CONNECTION_BANNER_ID,
+    CONNECTION_INDICATOR_ID,
+    DETAIL_PANE_ID,
+    EMPTY_STATE_IDS,
+    INSPECT_SEARCH_ID,
+    INSPECT_VIEW_ID,
+    LOG_PANE_HEADER_ID,
+    LOG_PANE_ID,
+    PULL_PROGRESS_VIEW_ID,
+    SEARCH_BAR_ID,
+    STATUS_BAR_ID,
+    TableID,
+)
+from docksurf_py.tui.widgets import (
     BuildProgressScreen,
     ConfirmDialog,
     ConnectionIndicator,
@@ -1336,7 +1338,7 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
         touches disk — guards the test-hermeticity fix from the plan."""
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
         app = DockSurfApp(docker=svc)
-        with patch("docksurf_py.app.save_session") as save:
+        with patch("docksurf_py.tui.app.save_session") as save:
             async with app.run_test() as pilot:
                 await pilot.pause()
                 app.query_one(TabbedContent).active = TabID.IMAGES
@@ -1346,7 +1348,7 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_persist_session_true_saves_on_tab_switch(self) -> None:
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
         app = DockSurfApp(docker=svc, persist_session=True)
-        with patch("docksurf_py.app.save_session") as save:
+        with patch("docksurf_py.tui.app.save_session") as save:
             async with app.run_test() as pilot:
                 await pilot.pause()
                 app.query_one(TabbedContent).active = TabID.IMAGES
@@ -1371,7 +1373,7 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_cycle_theme_key_cycles_and_persists(self) -> None:
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
         app = DockSurfApp(docker=svc, persist_session=True)
-        with patch("docksurf_py.app.save_session") as save:
+        with patch("docksurf_py.tui.app.save_session") as save:
             async with app.run_test() as pilot:
                 await pilot.pause()
                 # Key-press tests need explicit focus on the container table —
@@ -1395,9 +1397,9 @@ class ExecCustomActionTests(unittest.IsolatedAsyncioTestCase):
     machine running them, which isn't true on the macOS/Windows CI runners."""
 
     _HAS_SHELL_PATCH_TARGET = (
-        "docksurf_py.actions.ContainerActionHandler._container_has_shell"
+        "docksurf_py.tui.actions.ContainerActionHandler._container_has_shell"
     )
-    _WHICH_PATCH_TARGET = "docksurf_py.actions.container.shutil.which"
+    _WHICH_PATCH_TARGET = "docksurf_py.tui.actions.container.shutil.which"
 
     async def _select_first_row(self, app: DockSurfApp) -> None:
         await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
@@ -1502,9 +1504,9 @@ class ExecContainerActionTests(unittest.IsolatedAsyncioTestCase):
     `action_exec_custom`) so a slow daemon can't freeze the whole TUI."""
 
     _HAS_SHELL_PATCH_TARGET = (
-        "docksurf_py.actions.ContainerActionHandler._container_has_shell"
+        "docksurf_py.tui.actions.ContainerActionHandler._container_has_shell"
     )
-    _WHICH_PATCH_TARGET = "docksurf_py.actions.container.shutil.which"
+    _WHICH_PATCH_TARGET = "docksurf_py.tui.actions.container.shutil.which"
 
     async def _select_first_row(self, app: DockSurfApp) -> None:
         await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
@@ -1524,7 +1526,7 @@ class ExecContainerActionTests(unittest.IsolatedAsyncioTestCase):
                 patch(self._HAS_SHELL_PATCH_TARGET, return_value=True),
                 patch(self._WHICH_PATCH_TARGET, return_value="/usr/bin/docker"),
                 patch(
-                    "docksurf_py.actions.container.asyncio.to_thread",
+                    "docksurf_py.tui.actions.container.asyncio.to_thread",
                     wraps=asyncio.to_thread,
                 ) as to_thread,
                 patch.object(app, "_run_interactive_exec") as run_exec,
@@ -1719,7 +1721,7 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             await self._open_logs(app, pilot)
-            with patch("docksurf_py.actions.container._write_log_export") as writer:
+            with patch("docksurf_py.tui.actions.container._write_log_export") as writer:
                 writer.return_value = "/tmp/web-x.log"
                 app.action_export_logs()
             self.assertTrue(writer.called)
@@ -3005,13 +3007,13 @@ class OpenInBrowserTests(unittest.TestCase):
 
     def test_wsl_with_explorer_shells_to_explorer_exe(self) -> None:
         with (
-            patch("docksurf_py.actions.container._is_wsl", return_value=True),
+            patch("docksurf_py.tui.actions.container._is_wsl", return_value=True),
             patch(
-                "docksurf_py.actions.container.shutil.which",
+                "docksurf_py.tui.actions.container.shutil.which",
                 return_value="/mnt/c/Windows/explorer.exe",
             ),
-            patch("docksurf_py.actions.container.subprocess.run") as run,
-            patch("docksurf_py.actions.container.webbrowser.open") as browser_open,
+            patch("docksurf_py.tui.actions.container.subprocess.run") as run,
+            patch("docksurf_py.tui.actions.container.webbrowser.open") as browser_open,
         ):
             result = _open_in_browser("http://localhost:8080")
         self.assertTrue(result)
@@ -3022,10 +3024,10 @@ class OpenInBrowserTests(unittest.TestCase):
 
     def test_non_wsl_falls_back_to_webbrowser(self) -> None:
         with (
-            patch("docksurf_py.actions.container._is_wsl", return_value=False),
-            patch("docksurf_py.actions.container.subprocess.run") as run,
+            patch("docksurf_py.tui.actions.container._is_wsl", return_value=False),
+            patch("docksurf_py.tui.actions.container.subprocess.run") as run,
             patch(
-                "docksurf_py.actions.container.webbrowser.open", return_value=True
+                "docksurf_py.tui.actions.container.webbrowser.open", return_value=True
             ) as browser_open,
         ):
             result = _open_in_browser("http://localhost:8080")
@@ -3035,10 +3037,10 @@ class OpenInBrowserTests(unittest.TestCase):
 
     def test_wsl_without_explorer_falls_back_to_webbrowser(self) -> None:
         with (
-            patch("docksurf_py.actions.container._is_wsl", return_value=True),
-            patch("docksurf_py.actions.container.shutil.which", return_value=None),
+            patch("docksurf_py.tui.actions.container._is_wsl", return_value=True),
+            patch("docksurf_py.tui.actions.container.shutil.which", return_value=None),
             patch(
-                "docksurf_py.actions.container.webbrowser.open", return_value=True
+                "docksurf_py.tui.actions.container.webbrowser.open", return_value=True
             ) as browser_open,
         ):
             result = _open_in_browser("http://localhost:8080")
@@ -3047,13 +3049,13 @@ class OpenInBrowserTests(unittest.TestCase):
 
     def test_explorer_launch_failure_returns_false(self) -> None:
         with (
-            patch("docksurf_py.actions.container._is_wsl", return_value=True),
+            patch("docksurf_py.tui.actions.container._is_wsl", return_value=True),
             patch(
-                "docksurf_py.actions.container.shutil.which",
+                "docksurf_py.tui.actions.container.shutil.which",
                 return_value="/mnt/c/Windows/explorer.exe",
             ),
             patch(
-                "docksurf_py.actions.container.subprocess.run",
+                "docksurf_py.tui.actions.container.subprocess.run",
                 side_effect=OSError("no such file"),
             ),
         ):
@@ -3123,7 +3125,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             with patch(
-                "docksurf_py.actions.container._open_in_browser", return_value=True
+                "docksurf_py.tui.actions.container._open_in_browser", return_value=True
             ) as browser_open:
                 app.action_open_port()
                 await wait_until(lambda: browser_open.called)
@@ -3142,7 +3144,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             with patch(
-                "docksurf_py.actions.container._open_in_browser", return_value=True
+                "docksurf_py.tui.actions.container._open_in_browser", return_value=True
             ) as browser_open:
                 app.action_open_port()
                 await wait_until(

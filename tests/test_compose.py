@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from docksurf_py.docker import DockerClient, _assign_service_colors
-from docksurf_py.models import (
+from docksurf_py.core.docker import DockerClient, _assign_service_colors
+from docksurf_py.core.models import (
     COMPOSE_CONFIG_FILES_LABEL,
     COMPOSE_PROJECT_LABEL,
     COMPOSE_SERVICE_LABEL,
@@ -12,7 +12,7 @@ from docksurf_py.models import (
     Container,
     HealthProbe,
 )
-from docksurf_py.renderer import _group_by_project
+from docksurf_py.tui.renderer import _group_by_project
 
 
 def make_container(
@@ -160,9 +160,10 @@ class ComposeActionCommandTests(unittest.TestCase):
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             result = client.compose_action(
@@ -194,9 +195,10 @@ class ComposeActionCommandTests(unittest.TestCase):
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             client.compose_action("myapp", "stop")
@@ -206,7 +208,7 @@ class ComposeActionCommandTests(unittest.TestCase):
 
     def test_missing_docker_cli_is_daemon_unreachable(self) -> None:
         client = self._client()
-        with patch("docksurf_py.docker.client.shutil.which", return_value=None):
+        with patch("docksurf_py.core.docker.client.shutil.which", return_value=None):
             result = client.compose_action("myapp", "down")
         self.assertFalse(result.ok)
         self.assertEqual(result.kind, CommandErrorKind.DAEMON_UNREACHABLE)
@@ -215,9 +217,10 @@ class ComposeActionCommandTests(unittest.TestCase):
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(
                 returncode=1, stdout="", stderr="no such project"
@@ -275,9 +278,10 @@ class ComposeRebuildCommandTests(unittest.TestCase):
         )
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=0, stdout=config, stderr="")
             services = client.compose_buildable_services("myapp")
@@ -285,16 +289,17 @@ class ComposeRebuildCommandTests(unittest.TestCase):
 
     def test_buildable_services_none_when_docker_missing(self) -> None:
         client = self._client()
-        with patch("docksurf_py.docker.client.shutil.which", return_value=None):
+        with patch("docksurf_py.core.docker.client.shutil.which", return_value=None):
             self.assertIsNone(client.compose_buildable_services("myapp"))
 
     def test_buildable_services_none_on_nonzero_exit(self) -> None:
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
             self.assertIsNone(client.compose_buildable_services("myapp"))
@@ -303,9 +308,10 @@ class ComposeRebuildCommandTests(unittest.TestCase):
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
             self.assertIsNone(client.compose_buildable_services("myapp"))

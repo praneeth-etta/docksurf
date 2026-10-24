@@ -1,4 +1,4 @@
-from docksurf_py.app import main
+from docksurf_py.tui.app import main
 
 if __name__ == "__main__":
     main()

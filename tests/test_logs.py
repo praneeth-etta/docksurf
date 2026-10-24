@@ -3,10 +3,10 @@
 
 import unittest
 
-from docksurf_py.constants import LogLine, LogOptions
-from docksurf_py.docker import LogStream, _split_timestamp, _strip_ansi
-from docksurf_py.widgets import _buffer_to_text, _render_log_line
-from docksurf_py.widgets.log_pane import _LOG_BUFFER_MAXLEN, LogPane
+from docksurf_py.core.docker import LogStream, _split_timestamp, _strip_ansi
+from docksurf_py.core.types import LogLine, LogOptions
+from docksurf_py.tui.widgets import _buffer_to_text, _render_log_line
+from docksurf_py.tui.widgets.log_pane import _LOG_BUFFER_MAXLEN, LogPane
 
 
 class FakeContainer:

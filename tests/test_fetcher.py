@@ -6,9 +6,9 @@ inspect — PATCH_WORK.md P-1), the images tab's inspect-free listing, and
 import unittest
 from unittest.mock import MagicMock
 
-from docksurf_py.docker.fetcher import DockerResourceFetcher, _parse_summary_ports
-from docksurf_py.docker.format import format_ports
-from docksurf_py.models import PortBinding
+from docksurf_py.core.docker.fetcher import DockerResourceFetcher, _parse_summary_ports
+from docksurf_py.core.docker.format import format_ports
+from docksurf_py.core.models import PortBinding
 
 
 def _container_summary(cid: str, name: str, image_id: str = "sha256:img1") -> dict:

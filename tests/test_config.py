@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from docksurf_py.config import Config, load_config
+from docksurf_py.core.config import Config, load_config
 
 
 class LoadConfigTests(unittest.TestCase):
@@ -12,7 +12,7 @@ class LoadConfigTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             default_path = Path(tmp) / "docksurf" / "config.toml"
-            import docksurf_py.config as config_mod
+            import docksurf_py.core.config as config_mod
 
             with patch.object(config_mod, "DEFAULT_CONFIG_PATH", default_path):
                 config = load_config()

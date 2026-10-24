@@ -31,8 +31,8 @@ import time
 import unittest
 import uuid
 
-from docksurf_py.docker import DockerClient
-from docksurf_py.models import Container
+from docksurf_py.core.docker import DockerClient
+from docksurf_py.core.models import Container
 
 _PREFIX = "docksurf-it-"
 

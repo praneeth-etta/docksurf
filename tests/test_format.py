@@ -3,7 +3,7 @@ detail pane's env var display. See ROBUSTNESS_PERF_P2_PLAN.md §4."""
 
 import unittest
 
-from docksurf_py.docker import format_env
+from docksurf_py.core.docker import format_env
 
 
 class FormatEnvTests(unittest.TestCase):

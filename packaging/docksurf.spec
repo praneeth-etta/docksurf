@@ -16,10 +16,12 @@ a = Analysis(
     pathex=[repo_root],
     binaries=[],
     # Building from entrypoint.py (which imports docksurf_py as a real
-    # package) instead of running docksurf_py/app.py directly as the frozen
+    # package) instead of running docksurf_py/tui/app.py directly as the frozen
     # script keeps docksurf_py/ intact inside the bundle, so app.tcss lands
     # where Textual's relative CSS_PATH lookup expects it.
-    datas=[(os.path.join(repo_root, "docksurf_py", "app.tcss"), "docksurf_py")],
+    datas=[
+        (os.path.join(repo_root, "docksurf_py", "tui", "app.tcss"), "docksurf_py/tui")
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

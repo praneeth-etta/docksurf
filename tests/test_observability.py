@@ -3,22 +3,22 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-from docksurf_py.app import DockSurfApp
-from docksurf_py.docker import (
+from docksurf_py.core.docker import (
     DockerResourceFetcher,
     _parse_stats,
     _parse_system_df,
     format_uptime,
 )
-from docksurf_py.models import (
+from docksurf_py.core.models import (
     ContainerStats,
     ContainerTop,
     DiskUsageEntry,
     DockerSnapshot,
     SystemDf,
 )
-from docksurf_py.observability import _render_df, _render_stats, _render_top
-from docksurf_py.widgets import SystemDfScreen
+from docksurf_py.tui.app import DockSurfApp
+from docksurf_py.tui.observability import _render_df, _render_stats, _render_top
+from docksurf_py.tui.widgets import SystemDfScreen
 from tests.test_app import EMPTY_SNAPSHOT, MockDockerService, wait_until
 from tests.test_compose import make_container
 
@@ -173,7 +173,7 @@ class EventNoiseFilterTests(unittest.TestCase):
     healthcheck command, e.g. 'exec_create: /bin/sh -c echo ok')."""
 
     def setUp(self) -> None:
-        from docksurf_py.renderer import SnapshotManager
+        from docksurf_py.tui.renderer import SnapshotManager
 
         self.mgr = SnapshotManager()
 
@@ -195,7 +195,7 @@ class CreateSdkClientContextTests(unittest.TestCase):
     """docker.from_env() ignores `docker context`; _create_sdk_client fixes that."""
 
     def test_docker_host_env_takes_precedence(self) -> None:
-        from docksurf_py.docker import context as dockmod
+        from docksurf_py.core.docker import context as dockmod
 
         with (
             patch.dict(os.environ, {"DOCKER_HOST": "tcp://1.2.3.4:2375"}),
@@ -205,7 +205,7 @@ class CreateSdkClientContextTests(unittest.TestCase):
         from_env.assert_called_once()
 
     def test_non_default_context_uses_its_endpoint(self) -> None:
-        from docksurf_py.docker import context as dockmod
+        from docksurf_py.core.docker import context as dockmod
 
         fake_ctx = MagicMock(Name="colima", Host="unix:///home/u/.colima/docker.sock")
         fake_ctx.TLSConfig = None
@@ -225,7 +225,7 @@ class CreateSdkClientContextTests(unittest.TestCase):
         from_env.assert_not_called()
 
     def test_default_context_falls_back_to_from_env(self) -> None:
-        from docksurf_py.docker import context as dockmod
+        from docksurf_py.core.docker import context as dockmod
 
         fake_ctx = MagicMock(Name="default", Host=dockmod._DEFAULT_DOCKER_SOCK)
         with (
@@ -325,7 +325,8 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
     async def test_refresh_preserves_selection(self) -> None:
         from textual.widgets import DataTable
 
-        from docksurf_py.constants import TabID, TableID
+        from docksurf_py.core.types import TabID
+        from docksurf_py.tui.ids import TableID
 
         snap = DockerSnapshot(
             [
@@ -443,7 +444,8 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
     async def test_selecting_different_container_clears_top(self) -> None:
         from textual.widgets import DataTable
 
-        from docksurf_py.constants import TabID, TableID
+        from docksurf_py.core.types import TabID
+        from docksurf_py.tui.ids import TableID
 
         snap = DockerSnapshot(
             [

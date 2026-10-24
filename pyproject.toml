@@ -42,13 +42,14 @@ Issues = "https://github.com/praneeth-etta/docksurf/issues"
 Changelog = "https://github.com/praneeth-etta/docksurf/blob/main/CHANGELOG.md"
 
 [project.scripts]
-docksurf = "docksurf_py.app:main"
-docksurf-py = "docksurf_py.app:main"
+docksurf = "docksurf_py.tui.app:main"
+docksurf-py = "docksurf_py.tui.app:main"
 
 [dependency-groups]
 dev = [
     "mypy>=1.11.0",
     "pytest>=8.0.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.12.0",
 ]
 pyinstaller = [

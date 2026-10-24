@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 from docker.errors import APIError, DockerException, NotFound
 
-from docksurf_py.connection import ConnectionState, ConnectionStatus
-from docksurf_py.docker import DockerClient, format_size
-from docksurf_py.models import (
+from docksurf_py.core.connection import ConnectionState, ConnectionStatus
+from docksurf_py.core.docker import DockerClient, format_size
+from docksurf_py.core.models import (
     CommandErrorKind,
     ContainerDetail,
     ContainerTop,
@@ -32,7 +32,7 @@ def _fake_sdk() -> MagicMock:
 
 class LazyConnectTests(unittest.TestCase):
     def test_constructor_does_not_touch_the_sdk(self) -> None:
-        with patch("docksurf_py.docker.context.docker.from_env") as from_env:
+        with patch("docksurf_py.core.docker.context.docker.from_env") as from_env:
             client = DockerClient()
 
         from_env.assert_not_called()
@@ -41,7 +41,9 @@ class LazyConnectTests(unittest.TestCase):
 
     def test_fetch_snapshot_connects_lazily(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = DockerClient()
             self.assertFalse(client.is_connected)
 
@@ -54,7 +56,7 @@ class LazyConnectTests(unittest.TestCase):
     def test_fetch_snapshot_does_not_reping_once_connected(self) -> None:
         fake_sdk = _fake_sdk()
         with patch(
-            "docksurf_py.docker.context.docker.from_env", return_value=fake_sdk
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
         ) as from_env:
             client = DockerClient()
             client.fetch_snapshot()
@@ -65,7 +67,7 @@ class LazyConnectTests(unittest.TestCase):
 
     def test_fetch_snapshot_retries_after_daemon_recovers(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env") as from_env:
+        with patch("docksurf_py.core.docker.context.docker.from_env") as from_env:
             from_env.side_effect = [DockerException("daemon down"), fake_sdk]
             client = DockerClient()
 
@@ -90,7 +92,7 @@ def _new_client(
     """A `DockerClient()` that never picks up a real persisted context
     override from this machine's `~/.local/share/docksurf/state.json`,
     so these tests stay hermetic regardless of host state."""
-    with patch("docksurf_py.docker.client._load_last_context", return_value=None):
+    with patch("docksurf_py.core.docker.client._load_last_context", return_value=None):
         return DockerClient(
             context_override=context_override, host_override=host_override
         )
@@ -99,7 +101,9 @@ def _new_client(
 class MarkDisconnectedTests(unittest.TestCase):
     def test_flips_state_and_resets_client(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             client.fetch_snapshot()  # connects
         self.assertTrue(client.is_connected)
@@ -116,7 +120,9 @@ class MarkDisconnectedTests(unittest.TestCase):
 
     def test_preserves_context_and_host_over_ambient(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             client.fetch_snapshot()
         client.connection.context = "custom-ctx"
@@ -139,7 +145,9 @@ class MarkDisconnectedTests(unittest.TestCase):
         # disconnect (see the partial-failure tests below for the "one
         # category flaked" case, which now degrades gracefully instead).
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             client.fetch_snapshot()  # connects
             self.assertTrue(client.is_connected)
@@ -162,7 +170,9 @@ class MarkDisconnectedTests(unittest.TestCase):
         net.attrs = {"Driver": "bridge", "Scope": "local", "IPAM": {"Config": []}}
         fake_sdk.networks.list.return_value = [net]
 
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             first = client.fetch_snapshot()
             self.assertEqual(len(first.networks), 1)
@@ -179,7 +189,9 @@ class MarkDisconnectedTests(unittest.TestCase):
     def test_fetch_snapshot_partial_failure_on_first_fetch_is_not_fatal(self) -> None:
         fake_sdk = _fake_sdk()
         fake_sdk.networks.list.side_effect = APIError("blip")
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             snapshot = client.fetch_snapshot()
 
@@ -191,7 +203,7 @@ class MarkDisconnectedTests(unittest.TestCase):
 
 class ContextPersistenceTests(unittest.TestCase):
     def test_round_trips_last_context(self) -> None:
-        import docksurf_py.docker.context as dockmod
+        import docksurf_py.core.docker.context as dockmod
 
         with tempfile.TemporaryDirectory() as tmp:
             state_file = Path(tmp) / "state.json"
@@ -208,7 +220,7 @@ class ContextPersistenceTests(unittest.TestCase):
                 self.assertIsNone(dockmod._load_last_context())
 
     def test_load_tolerates_missing_or_corrupt_file(self) -> None:
-        import docksurf_py.docker.context as dockmod
+        import docksurf_py.core.docker.context as dockmod
 
         with tempfile.TemporaryDirectory() as tmp:
             state_file = Path(tmp) / "nested" / "state.json"
@@ -228,9 +240,10 @@ class SwitchContextTests(unittest.TestCase):
         with (
             patch("docker.context.ContextAPI.get_context", return_value=ctx),
             patch(
-                "docksurf_py.docker.context.docker.DockerClient", return_value=fake_sdk
+                "docksurf_py.core.docker.context.docker.DockerClient",
+                return_value=fake_sdk,
             ),
-            patch("docksurf_py.docker.client._save_last_context") as save,
+            patch("docksurf_py.core.docker.client._save_last_context") as save,
         ):
             result = client.switch_context("remote")
 
@@ -243,7 +256,9 @@ class SwitchContextTests(unittest.TestCase):
 
     def test_switch_success_closes_previous_fetcher_pool(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             client.fetch_snapshot()  # connects via ambient default
         old_fetcher = client._fetcher
@@ -252,10 +267,10 @@ class SwitchContextTests(unittest.TestCase):
         with (
             patch("docker.context.ContextAPI.get_context", return_value=ctx),
             patch(
-                "docksurf_py.docker.context.docker.DockerClient",
+                "docksurf_py.core.docker.context.docker.DockerClient",
                 return_value=_fake_sdk(),
             ),
-            patch("docksurf_py.docker.client._save_last_context"),
+            patch("docksurf_py.core.docker.client._save_last_context"),
         ):
             result = client.switch_context("remote")
 
@@ -276,7 +291,9 @@ class SwitchContextTests(unittest.TestCase):
 
     def test_switch_leaves_current_connection_untouched_on_ping_failure(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             client.fetch_snapshot()  # connects via ambient default
         self.assertTrue(client.is_connected)
@@ -289,7 +306,7 @@ class SwitchContextTests(unittest.TestCase):
                 "docker.context.ContextAPI.get_context", return_value=unreachable_ctx
             ),
             patch(
-                "docksurf_py.docker.context.docker.DockerClient",
+                "docksurf_py.core.docker.context.docker.DockerClient",
                 return_value=unreachable_sdk,
             ),
         ):
@@ -306,7 +323,9 @@ class SwitchContextTests(unittest.TestCase):
 
     def test_list_contexts_marks_current_by_active_connection(self) -> None:
         fake_sdk = _fake_sdk()
-        with patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk):
+        with patch(
+            "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+        ):
             client = _new_client()
             client.fetch_snapshot()  # connects, context becomes "default"
 
@@ -333,7 +352,7 @@ class HostContextOverrideTests(unittest.TestCase):
     def test_host_override_bypasses_context_resolution(self) -> None:
         fake_sdk = _fake_sdk()
         with patch(
-            "docksurf_py.docker.client._build_sdk_client_for_host",
+            "docksurf_py.core.docker.client._build_sdk_client_for_host",
             return_value=fake_sdk,
         ) as build_for_host:
             client = _new_client(host_override="tcp://remote:2375")
@@ -350,10 +369,11 @@ class HostContextOverrideTests(unittest.TestCase):
         with (
             patch("docker.context.ContextAPI.get_context", return_value=ctx),
             patch(
-                "docksurf_py.docker.context.docker.DockerClient", return_value=fake_sdk
+                "docksurf_py.core.docker.context.docker.DockerClient",
+                return_value=fake_sdk,
             ),
             patch(
-                "docksurf_py.docker.client._load_last_context",
+                "docksurf_py.core.docker.client._load_last_context",
                 return_value="some-other-persisted-context",
             ),
         ):
@@ -367,12 +387,14 @@ class HostContextOverrideTests(unittest.TestCase):
         fake_sdk = _fake_sdk()
         with (
             patch("docker.context.ContextAPI.get_context", return_value=None),
-            patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk),
             patch(
-                "docksurf_py.docker.client._load_last_context",
+                "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+            ),
+            patch(
+                "docksurf_py.core.docker.client._load_last_context",
                 return_value="good-persisted-context",
             ),
-            patch("docksurf_py.docker.client._clear_last_context") as clear,
+            patch("docksurf_py.core.docker.client._clear_last_context") as clear,
         ):
             client = DockerClient(context_override="nonexistent")
             client.fetch_snapshot()
@@ -383,12 +405,14 @@ class HostContextOverrideTests(unittest.TestCase):
         fake_sdk = _fake_sdk()
         with (
             patch("docker.context.ContextAPI.get_context", return_value=None),
-            patch("docksurf_py.docker.context.docker.from_env", return_value=fake_sdk),
             patch(
-                "docksurf_py.docker.client._load_last_context",
+                "docksurf_py.core.docker.context.docker.from_env", return_value=fake_sdk
+            ),
+            patch(
+                "docksurf_py.core.docker.client._load_last_context",
                 return_value="stale-persisted-context",
             ),
-            patch("docksurf_py.docker.client._clear_last_context") as clear,
+            patch("docksurf_py.core.docker.client._clear_last_context") as clear,
         ):
             client = DockerClient()  # no CLI override — the override is persisted
             client.fetch_snapshot()
@@ -401,10 +425,10 @@ class SdkClientTimeoutTests(unittest.TestCase):
     wedged daemon should fail one request, not stall refreshing forever."""
 
     def test_default_socket_path_passes_timeout_to_from_env(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
         with (
-            patch("docksurf_py.docker.context.docker.from_env") as from_env,
+            patch("docksurf_py.core.docker.context.docker.from_env") as from_env,
             patch("docker.context.ContextAPI.get_current_context", return_value=None),
         ):
             context._build_sdk_client_for_context(
@@ -418,9 +442,9 @@ class SdkClientTimeoutTests(unittest.TestCase):
             self.assertEqual(call.kwargs.get("timeout"), context._SDK_TIMEOUT_SECONDS)
 
     def test_context_with_custom_host_passes_timeout(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
-        with patch("docksurf_py.docker.context.docker.DockerClient") as sdk_ctor:
+        with patch("docksurf_py.core.docker.context.docker.DockerClient") as sdk_ctor:
             context._build_sdk_client_for_context(
                 _fake_context("remote", "tcp://remote:2375")
             )
@@ -431,9 +455,9 @@ class SdkClientTimeoutTests(unittest.TestCase):
         )
 
     def test_host_override_with_custom_host_passes_timeout(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
-        with patch("docksurf_py.docker.context.docker.DockerClient") as sdk_ctor:
+        with patch("docksurf_py.core.docker.context.docker.DockerClient") as sdk_ctor:
             context._build_sdk_client_for_host("tcp://remote:2375")
 
         sdk_ctor.assert_called_once()
@@ -442,9 +466,9 @@ class SdkClientTimeoutTests(unittest.TestCase):
         )
 
     def test_ssh_host_still_passes_timeout_alongside_use_ssh_client(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
-        with patch("docksurf_py.docker.context.docker.DockerClient") as sdk_ctor:
+        with patch("docksurf_py.core.docker.context.docker.DockerClient") as sdk_ctor:
             context._build_sdk_client_for_context(
                 _fake_context("remote", "ssh://example.com")
             )
@@ -462,10 +486,10 @@ class SdkClientPoolSizeTests(unittest.TestCase):
     of churning sockets past the pool limit (PATCH_WORK.md P-4)."""
 
     def test_default_socket_path_passes_pool_size_to_from_env(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
         with (
-            patch("docksurf_py.docker.context.docker.from_env") as from_env,
+            patch("docksurf_py.core.docker.context.docker.from_env") as from_env,
             patch("docker.context.ContextAPI.get_current_context", return_value=None),
         ):
             context._build_sdk_client_for_context(
@@ -479,9 +503,9 @@ class SdkClientPoolSizeTests(unittest.TestCase):
             self.assertEqual(call.kwargs.get("max_pool_size"), context._MAX_POOL_SIZE)
 
     def test_context_with_custom_host_passes_pool_size(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
-        with patch("docksurf_py.docker.context.docker.DockerClient") as sdk_ctor:
+        with patch("docksurf_py.core.docker.context.docker.DockerClient") as sdk_ctor:
             context._build_sdk_client_for_context(
                 _fake_context("remote", "tcp://remote:2375")
             )
@@ -491,9 +515,9 @@ class SdkClientPoolSizeTests(unittest.TestCase):
         )
 
     def test_host_override_with_custom_host_passes_pool_size(self) -> None:
-        from docksurf_py.docker import context
+        from docksurf_py.core.docker import context
 
-        with patch("docksurf_py.docker.context.docker.DockerClient") as sdk_ctor:
+        with patch("docksurf_py.core.docker.context.docker.DockerClient") as sdk_ctor:
             context._build_sdk_client_for_host("tcp://remote:2375")
 
         self.assertEqual(
@@ -843,9 +867,10 @@ class ContainerCpTests(unittest.TestCase):
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             result = client.container_cp("mycontainer:/etc/hosts", "./hosts")
@@ -855,7 +880,7 @@ class ContainerCpTests(unittest.TestCase):
 
     def test_missing_docker_cli_is_daemon_unreachable(self) -> None:
         client = self._client()
-        with patch("docksurf_py.docker.client.shutil.which", return_value=None):
+        with patch("docksurf_py.core.docker.client.shutil.which", return_value=None):
             result = client.container_cp("a", "b")
         self.assertFalse(result.ok)
         self.assertEqual(result.kind, CommandErrorKind.DAEMON_UNREACHABLE)
@@ -864,9 +889,10 @@ class ContainerCpTests(unittest.TestCase):
         client = self._client()
         with (
             patch(
-                "docksurf_py.docker.client.shutil.which", return_value="/usr/bin/docker"
+                "docksurf_py.core.docker.client.shutil.which",
+                return_value="/usr/bin/docker",
             ),
-            patch("docksurf_py.docker.client.subprocess.run") as run,
+            patch("docksurf_py.core.docker.client.subprocess.run") as run,
         ):
             run.return_value = MagicMock(
                 returncode=1, stdout="", stderr="no such file or directory"
@@ -1061,7 +1087,7 @@ class NetworkWriteTests(unittest.TestCase):
 
 class GetNetworksEndpointTests(unittest.TestCase):
     def test_parses_attached_container_endpoints(self) -> None:
-        from docksurf_py.docker import DockerResourceFetcher
+        from docksurf_py.core.docker import DockerResourceFetcher
 
         fake_net = MagicMock()
         fake_net.short_id = "abc123"
@@ -1090,7 +1116,7 @@ class GetNetworksEndpointTests(unittest.TestCase):
         self.assertEqual(ep.mac, "02:42:ac:12:00:02")
 
     def test_no_containers_yields_empty_endpoints(self) -> None:
-        from docksurf_py.docker import DockerResourceFetcher
+        from docksurf_py.core.docker import DockerResourceFetcher
 
         fake_net = MagicMock()
         fake_net.short_id = "abc123"
@@ -1104,7 +1130,7 @@ class GetNetworksEndpointTests(unittest.TestCase):
 
 class PullStreamTests(unittest.TestCase):
     def test_yields_chunks_from_api_pull(self) -> None:
-        from docksurf_py.docker import PullStream
+        from docksurf_py.core.docker import PullStream
 
         sdk = MagicMock()
         sdk.api.pull.return_value = iter(
@@ -1117,7 +1143,7 @@ class PullStreamTests(unittest.TestCase):
         )
 
     def test_api_error_yields_error_chunk(self) -> None:
-        from docksurf_py.docker import PullStream
+        from docksurf_py.core.docker import PullStream
 
         sdk = MagicMock()
         sdk.api.pull.side_effect = DockerException("no such image")
@@ -1126,7 +1152,7 @@ class PullStreamTests(unittest.TestCase):
         self.assertIn("error", chunks[0])
 
     def test_no_client_yields_nothing(self) -> None:
-        from docksurf_py.docker import PullStream
+        from docksurf_py.core.docker import PullStream
 
         self.assertEqual(list(PullStream("alpine", "latest", None)), [])
 

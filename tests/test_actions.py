@@ -1,6 +1,6 @@
 import unittest
 
-from docksurf_py.actions import (
+from docksurf_py.tui.actions import (
     EXEC_SHELL_CANDIDATES,
     build_cp_paths,
     build_exec_argv,
