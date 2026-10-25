@@ -1,14 +1,13 @@
 """SelectionHandler — multi-select marking and the shared bulk-execution machinery."""
 
 import logging
-from typing import Any, Callable
+from typing import Any
 
-from rich.markup import escape
 from textual import work
 from textual.coordinate import Coordinate
 from textual.widgets import DataTable, TabbedContent
 
-from docksurf_py.core.models import CommandResult
+from docksurf_py.core.state.ops import BulkJob, BulkResult, run_bulk
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base
 from docksurf_py.tui.ids import MARK_GLYPH
@@ -19,9 +18,8 @@ logger = logging.getLogger(__name__)
 class SelectionHandler(_Base):
     """Multi-select marking and the shared bulk-execution machinery.
 
-    Marks are keyed by `_row_key` (kind, id) tuples in `self._marked[tab]`
-    (per-tab sets, initialized in `TableRenderer.setup_tables`) so they
-    survive refresh/filter/collapse — `SnapshotManager._apply_snapshot` prunes
+    Marks live in core (`TablesState.marked`, keyed by `row_key` tuples) so
+    they survive refresh/filter/collapse — `TablesState.apply_snapshot` prunes
     vanished keys and every populate method re-renders the mark glyph on each
     repaint. `ContainerActionHandler`/`ResourceDeletionHandler` build the
     per-domain job lists (what to run, and its guard/plan logic); this mixin
@@ -48,12 +46,8 @@ class SelectionHandler(_Base):
         row = table.cursor_row
         if row is None:
             return
-        marked = self._marked[active]
-        if key in marked:
-            marked.discard(key)
-        else:
-            marked.add(key)
-        table.update_cell_at(Coordinate(row, 0), MARK_GLYPH if key in marked else "")
+        now_marked = self._tables.toggle_mark(active, key)
+        table.update_cell_at(Coordinate(row, 0), MARK_GLYPH if now_marked else "")
 
         # Advance the cursor — mark-and-move, k9s-style rapid selection.
         if row + 1 < table.row_count:
@@ -61,30 +55,19 @@ class SelectionHandler(_Base):
 
     def action_clear_marks(self) -> None:
         active = self.query_one(TabbedContent).active
-        if not self._marked.get(active):
+        if not self._tables.clear_marks(active):
             return
-        self._marked[active].clear()
         self._rerender_active_table()
 
     def _marked_items(self, tab_id: TabID) -> list[Any]:
         """Resolve a tab's marked keys back to live objects from the snapshot."""
-        if not self.snapshot:
-            return []
-        entry = self._resource_registry.get(tab_id)
-        keys = self._marked.get(tab_id)
-        if entry is None or not keys:
-            return []
-        return [
-            item
-            for item in entry.snapshot_items(self.snapshot)
-            if self._row_key(item) in keys
-        ]
+        return self._tables.marked_items(tab_id, self.snapshot)
 
     def _run_bulk(
         self,
         tab_id: TabID,
         verb: str,
-        jobs: list[tuple[tuple[str, str], str, Callable[[], CommandResult]]],
+        jobs: list[BulkJob],
     ) -> None:
         """Protocol-facing entry point for `ContainerActionHandler`/
         `ResourceDeletionHandler` — dispatches to the threaded worker below.
@@ -102,56 +85,25 @@ class SelectionHandler(_Base):
         self,
         tab_id: TabID,
         verb: str,
-        jobs: list[tuple[tuple[str, str], str, Callable[[], CommandResult]]],
+        jobs: list[BulkJob],
     ) -> None:
-        """Run each (key, name, command) job sequentially and summarize.
+        """Run the jobs off the UI thread (core's `run_bulk`), then report."""
+        result = run_bulk(jobs)
+        self.call_from_thread(self._handle_bulk_result, tab_id, verb, result)
 
-        Sequential, not parallel — these are direct Docker API/CLI calls, and
-        running them one at a time keeps error attribution unambiguous (which
-        job failed) without adding a thread pool for what's normally a
-        handful of items.
-        """
-        ok_count = 0
-        failures: list[tuple[str, str]] = []
-        executed_keys: set[tuple[str, str]] = set()
-        for key, name, command in jobs:
-            result = command()
-            executed_keys.add(key)
-            if result.ok:
-                ok_count += 1
-            else:
-                failures.append((name, result.message))
-        self.call_from_thread(
-            self._handle_bulk_result,
-            tab_id,
-            executed_keys,
-            verb,
-            ok_count,
-            len(jobs),
-            failures,
-        )
-
-    def _handle_bulk_result(
-        self,
-        tab_id: TabID,
-        executed_keys: set[tuple[str, str]],
-        verb: str,
-        ok_count: int,
-        total: int,
-        failures: list[tuple[str, str]],
-    ) -> None:
-        if failures:
-            shown = ", ".join(f"{escape(n)} ({m})" for n, m in failures[:3])
-            more = f", +{len(failures) - 3} more" if len(failures) > 3 else ""
+    def _handle_bulk_result(self, tab_id: TabID, verb: str, result: BulkResult) -> None:
+        message, is_error = result.summary(verb)
+        if is_error:
             logger.warning(
-                "Bulk %s: %d/%d failed — %s%s", verb, len(failures), total, shown, more
+                "Bulk %s: %d/%d failed — %s",
+                verb,
+                len(result.failures),
+                result.total,
+                message,
             )
-            self.notify(
-                f"{verb} {ok_count}/{total} — failed: {shown}{more}",
-                severity="error",
-            )
+            self.notify(message, severity="error")
         else:
-            logger.info("Bulk %s: %d/%d succeeded", verb, ok_count, total)
-            self.notify(f"{verb} {ok_count}/{total}")
-        self._marked[tab_id] -= executed_keys
+            logger.info("Bulk %s: %d/%d succeeded", verb, result.ok_count, result.total)
+            self.notify(message)
+        self._tables.unmark(tab_id, result.executed_keys)
         self.start_refresh()

@@ -7,6 +7,7 @@ from rich.markup import escape
 from textual import work
 
 from docksurf_py.core.models import CommandResult, ComposeProject, Container
+from docksurf_py.core.state.ops import rebuild_skip_reason
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _PROJECT_HINT, _Base
 from docksurf_py.tui.widgets import BuildProgressScreen, ConfirmDialog
@@ -90,10 +91,7 @@ class ComposeActionHandler(_Base):
         item = self._get_focused_resource(TabID.CONTAINERS)
         if not isinstance(item, ComposeProject):
             return
-        if item.name in self._collapsed_projects:
-            self._collapsed_projects.discard(item.name)
-        else:
-            self._collapsed_projects.add(item.name)
+        self._tables.toggle_collapse(item.name)
         self._rerender_containers()
 
     @work
@@ -121,11 +119,8 @@ class ComposeActionHandler(_Base):
             c.compose_config_files,
             c.compose_working_dir,
         )
-        if buildable is not None and c.compose_service not in buildable:
-            self.notify(
-                f"No build defined for service '{escape(c.compose_service)}' — "
-                "nothing to rebuild"
-            )
+        if reason := rebuild_skip_reason(c, buildable):
+            self.notify(reason)
             return
 
         if self.config.confirm_rebuild:

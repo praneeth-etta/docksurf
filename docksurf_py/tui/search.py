@@ -66,16 +66,13 @@ class ResourceSearchController(_Base):
         if not self.snapshot:
             return
 
-        q = query.lower()
         active = self.query_one(TabbedContent).active
         entry = self._resource_registry.get(active)
         if entry is None:
             return
 
-        items = entry.snapshot_items(self.snapshot)
-        filtered = [item for item in items if entry.matches(item, q)]
-        filtered = self._sort_items(active, entry, filtered)
+        rows = self._tables.build_rows(active, self.snapshot, query)
         table = self.query_one(f"#{entry.table_id}", DataTable)
         table.clear(columns=False)
-        entry.populate(table, filtered)
-        self._update_empty_state(active, entry, filtered, query)
+        entry.populate(table, rows)
+        self._update_empty_state(active, entry, rows, query)

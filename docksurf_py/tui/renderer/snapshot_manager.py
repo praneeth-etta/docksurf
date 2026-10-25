@@ -1,18 +1,17 @@
 """SnapshotManager — background snapshot fetch and event-driven auto-refresh."""
 
 import logging
-import threading
 
 from rich.markup import escape
 from textual import work
 from textual.timer import Timer
 from textual.widgets import DataTable, Input, LoadingIndicator, Static, TabbedContent
 
-from docksurf_py.core.connection import ConnectionState, ConnectionStatus
-from docksurf_py.core.docker import EventStream
+from docksurf_py.core.connection import ConnectionState
 from docksurf_py.core.models import (
     DockerSnapshot,
 )
+from docksurf_py.core.state.refresh import EventWatcher, is_noise_event
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import (
@@ -32,37 +31,24 @@ logger = logging.getLogger(__name__)
 class SnapshotManager(_Base):
     """Fetches Docker state in a background thread and commits it to the UI."""
 
-    _refresh_in_progress = False
-    _refresh_pending = False
-    _event_stream: EventStream | None = None
-    _event_stop: threading.Event | None = None
+    # Refresh bookkeeping (`self._refresh`, a core `RefreshCoordinator`) is
+    # created by `DockSurfApp.__init__`; this mixin owns the threads/timers.
+    _event_watcher: EventWatcher | None = None
     _refresh_debounce: Timer | None = None
-    # Tracks the last connection state we've reported so notifications are shown
-    # only when the connection actually changes.
-    _last_conn_status: ConnectionStatus = ConnectionStatus.NOT_CONNECTED
 
-    # Docker event prefixes that don't change the rendered state and would only
-    # trigger unnecessary refreshes. Exec events include a command after ':', so
-    # matching is done on the action prefix.
-    _EVENT_NOISE = frozenset(
-        {
-            "exec_create",
-            "exec_start",
-            "exec_die",
-            "exec_detach",
-            "top",
-            "health_status",
-        }
-    )
+    _is_noise_event = staticmethod(is_noise_event)
 
-    def _is_noise_event(self, action: str) -> bool:
-        return action.split(":", 1)[0].strip() in self._EVENT_NOISE
+    # Temporary read-through alias onto `self._refresh`, kept so existing tests
+    # that inspect it keep working unchanged while the UI separation is in
+    # progress (local/UI_SEPARATION_PLAN.md, Phase 4 removes it).
+    @property
+    def _refresh_in_progress(self) -> bool:
+        return self._refresh.in_progress
 
     def start_refresh(self) -> None:
-        if self._refresh_in_progress:
+        if not self._refresh.begin():
             logger.debug("Refresh skipped — already in progress")
             return
-        self._refresh_in_progress = True
         logger.info("Refresh started")
         self.query_one(f"#{REFRESH_LOADING_ID}", LoadingIndicator).display = True
         self.populate_tables()
@@ -109,31 +95,19 @@ class SnapshotManager(_Base):
         active = self.query_one(TabbedContent).active
         focus_key = self._focused_row_key(active)
 
-        # Drop marks on resources that no longer exist — checked against the
-        # full snapshot (not a search-filtered view), before any repopulate.
-        for tab_id, entry in self._resource_registry.items():
-            live_keys = {
-                key
-                for item in entry.snapshot_items(snapshot)
-                if (key := self._row_key(item)) is not None
-            }
-            self._marked[tab_id] &= live_keys
-
-        # Only the active tab's table is visible, so only it needs
-        # repopulating now — the other three are marked dirty and caught up
-        # lazily by `_populate_tab` the moment they become active
-        # (`DockSurfApp.clear_on_tab_switch`). Cuts DataTable rebuild work
-        # ~4x per event-driven refresh (PATCH_WORK.md P-5).
-        for tab_id in self._resource_registry:
-            if tab_id != active:
-                self._dirty_tabs.add(tab_id)
+        # Drop marks on resources that no longer exist, and flag the inactive
+        # tabs dirty: only the active tab's table is visible, so only it is
+        # repopulated now — the others are caught up lazily by `_populate_tab`
+        # the moment they become active (`DockSurfApp.clear_on_tab_switch`).
+        # Cuts DataTable rebuild work ~4x per event-driven refresh (P-5).
+        self._tables.apply_snapshot(snapshot, active)
 
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
         filter_active = search_bar.display and bool(search_bar.value)
         if filter_active:
             # _apply_filter (below) populates the active tab itself — doing
             # it here too would repaint it twice.
-            self._dirty_tabs.discard(active)
+            self._tables.mark_clean(active)
         else:
             self._populate_tab(active)
 
@@ -162,10 +136,10 @@ class SnapshotManager(_Base):
         entry = self._resource_registry[tab_id]
         table = self.query_one(f"#{entry.table_id}", DataTable)
         table.clear(columns=False)
-        items = self._sort_items(tab_id, entry, entry.snapshot_items(self.snapshot))
-        entry.populate(table, items)
-        self._update_empty_state(tab_id, entry, items)
-        self._dirty_tabs.discard(tab_id)
+        rows = self._tables.build_rows(tab_id, self.snapshot)
+        entry.populate(table, rows)
+        self._update_empty_state(tab_id, entry, rows)
+        self._tables.mark_clean(tab_id)
 
     # Stable row identity; lives in core so it's testable without the app.
     _row_key = staticmethod(row_key)
@@ -182,28 +156,28 @@ class SnapshotManager(_Base):
         if focus_key is None or entry is None:
             self._auto_select_first()
             return
-        for idx, item in enumerate(self._current.get(tab_id, [])):
-            if self._row_key(item) == focus_key:
-                table = self.query_one(f"#{entry.table_id}", DataTable)
-                # `RowHighlighted` only fires when the cursor's coordinate actually
-                # changes, so only drive the detail pane / live panes here when the
-                # cursor is not about to move, otherwise the event handler
-                # (`DockSurfApp.update_details`) does it, and doing both
-                # renders everything twice.
-                cursor_will_move = table.cursor_row != idx
-                table.move_cursor(row=idx)
-                if not cursor_will_move:
-                    pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
-                    try:
-                        entry.show_details(pane, idx)
-                    except IndexError:
-                        pane.clear_details()
-                    self._sync_stats()
-                    self._sync_top()
-                    self._sync_container_detail()
-                return
-        # The previously-focused resource is gone — select the first row.
-        self._auto_select_first()
+        idx = self._tables.index_of(tab_id, focus_key)
+        if idx is None:
+            # The previously-focused resource is gone — select the first row.
+            self._auto_select_first()
+            return
+        table = self.query_one(f"#{entry.table_id}", DataTable)
+        # `RowHighlighted` only fires when the cursor's coordinate actually
+        # changes, so only drive the detail pane / live panes here when the
+        # cursor is not about to move, otherwise the event handler
+        # (`DockSurfApp.update_details`) does it, and doing both
+        # renders everything twice.
+        cursor_will_move = table.cursor_row != idx
+        table.move_cursor(row=idx)
+        if not cursor_will_move:
+            pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
+            try:
+                entry.show_details(pane, idx)
+            except IndexError:
+                pane.clear_details()
+            self._sync_stats()
+            self._sync_top()
+            self._sync_container_detail()
 
     def _maybe_notify_connection_change(self, state: ConnectionState) -> None:
         """UI-thread only — call via `call_from_thread` from a worker.
@@ -213,15 +187,10 @@ class SnapshotManager(_Base):
         every attempt. Feeds the StatusBar's connection segment either way
         the first time, then only a real transition after that.
         """
-        previous = self._last_conn_status
-        if state.status == previous:
+        change = self._refresh.connection_changed(state)
+        if change is None:
             return
-        was_down = previous not in (
-            ConnectionStatus.NOT_CONNECTED,
-            ConnectionStatus.CONNECTED,
-        )
-        self._last_conn_status = state.status
-        connected = state.status == ConnectionStatus.CONNECTED
+        connected = change.connected
         status_bar = self.query_one(f"#{STATUS_BAR_ID}", StatusBar)
         status_bar.set_connection_state(connected, "" if connected else state.message)
         indicator = self.query_one(f"#{CONNECTION_INDICATOR_ID}", ConnectionIndicator)
@@ -229,7 +198,7 @@ class SnapshotManager(_Base):
         banner = self.query_one(f"#{CONNECTION_BANNER_ID}", Static)
         if connected:
             banner.display = False
-            if was_down:
+            if change.reconnected:
                 self.notify("Reconnected to Docker")
         else:
             banner_text = state.message
@@ -258,59 +227,33 @@ class SnapshotManager(_Base):
                 logger.warning("Refresh failed: %s", error)
                 self.notify(f"Refresh failed: {error}", severity="error")
         finally:
-            self._refresh_in_progress = False
+            rerun = self._refresh.finish()
             self.query_one(f"#{REFRESH_LOADING_ID}", LoadingIndicator).display = False
             # An event arrived mid-refresh — run once more so the final state lands.
-            if self._refresh_pending:
-                self._refresh_pending = False
+            if rerun:
                 self.start_refresh()
 
     # --- Event-driven auto-refresh ---
 
-    # TODO: Refactor to reduce complexity.
     @work(thread=True)
     def start_event_listener(self) -> None:
         """Watch `docker events` and keep the UI in sync.
 
-        Runs on a background thread. If the event stream ends because the daemon
-        becomes unavailable, it also acts as the reconnect loop, retrying until the
-        connection is restored and triggering an immediate refresh when it succeeds.
+        Runs core's `EventWatcher` on this background thread; it also acts as
+        the reconnect loop, retrying until the connection is restored and
+        triggering an immediate refresh when it succeeds. Its callbacks hop
+        to the UI thread here.
         """
-        stop = threading.Event()
-        self._event_stop = stop
-        while not stop.is_set():
-            stream = self.docker.stream_events()
-            self._event_stream = stream
-            try:
-                for event in stream:
-                    if stop.is_set():
-                        break
-                    if self._is_noise_event(event.get("Action", "")):
-                        continue
-                    self.call_from_thread(self._on_docker_event)
-            except Exception:
-                # Usually a `call_from_thread` race during app shutdown, not a Docker
-                # failure. `EventStream` records daemon errors in `.error` instead of
-                # propagating them.
-                logger.exception("Event listener error")
-
-            if stream.error is not None:
-                self.docker.mark_disconnected(stream.error)
-            self.call_from_thread(
-                self._maybe_notify_connection_change, self.docker.connection
-            )
-
-            if not self.docker.is_connected:
-                stop.wait(2.0)
-                if stop.is_set():
-                    break
-                state = self.docker.ensure_connected()
-                self.call_from_thread(self._maybe_notify_connection_change, state)
-                if state.status == ConnectionStatus.CONNECTED:
-                    self.call_from_thread(self.start_refresh)
-                continue
-
-            stop.wait(2.0)
+        watcher = EventWatcher(
+            self.docker,
+            on_event=lambda: self.call_from_thread(self._on_docker_event),
+            on_connection=lambda state: self.call_from_thread(
+                self._maybe_notify_connection_change, state
+            ),
+            on_reconnected=lambda: self.call_from_thread(self.start_refresh),
+        )
+        self._event_watcher = watcher
+        watcher.run()
 
     def _on_docker_event(self) -> None:
         # Coalesce bursts (e.g. `compose up` emits many events) into one refresh.
@@ -320,13 +263,9 @@ class SnapshotManager(_Base):
 
     def _debounced_refresh(self) -> None:
         self._refresh_debounce = None
-        if self._refresh_in_progress:
-            self._refresh_pending = True
-        else:
+        if self._refresh.events_settled():
             self.start_refresh()
 
     def stop_event_listener(self) -> None:
-        if self._event_stop is not None:
-            self._event_stop.set()
-        if self._event_stream is not None:
-            self._event_stream.stop()
+        if self._event_watcher is not None:
+            self._event_watcher.stop()

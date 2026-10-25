@@ -10,7 +10,6 @@ from docksurf_py.core.docker import format_size
 from docksurf_py.core.models import (
     ComposeProject,
     Container,
-    ContainerDetail,
     Image,
     Network,
     Volume,
@@ -24,7 +23,7 @@ from docksurf_py.core.render.markup import (
     truncate,
 )
 from docksurf_py.core.session import save_session
-from docksurf_py.core.state.tables import group_by_project
+from docksurf_py.core.state.tables import TablesState
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
@@ -45,19 +44,10 @@ if TYPE_CHECKING:
 # Max chars shown in an image repository / volume name cell.
 NAME_MAX_CHARS = 30
 
-_NEEDS_SNAPSHOT_MSG = "populate with no items needs a snapshot"
-
 
 def _safe_row(table: DataTable, *values) -> None:
     """Add a row, escaping plain strings and passing SafeMarkup through unchanged."""
     table.add_row(*(v if isinstance(v, SafeMarkup) else escape(str(v)) for v in values))
-
-
-def _mark_cell(
-    marked: set[tuple[str, str]], key: tuple[str, str] | None
-) -> SafeMarkup | str:
-    """Leading-column cell for a row: the mark glyph if selected, else blank."""
-    return MARK_GLYPH if key is not None and key in marked else ""
 
 
 class TableRenderer(_Base):
@@ -68,49 +58,49 @@ class TableRenderer(_Base):
     """
 
     def setup_tables(self) -> None:
-        self._current: dict[TabID, list] = {
-            tab_id: [] for tab_id in self._resource_registry
-        }
-        # Tabs whose tables haven't been repopulated since the last snapshot.
-        # Inactive tabs are refreshed lazily when they become active.
-        self._dirty_tabs: set[TabID] = set()
-
-        # Compose project names whose service rows are currently hidden.
-        self._collapsed_projects: set[str] = set()
-
-        # Multi-select: per-tab sets of marked row-keys (see `_row_key`).
-        self._marked: dict[TabID, set[tuple[str, str]]] = {
-            tab_id: set() for tab_id in self._resource_registry
-        }
-
-        # On-demand per-volume disk sizes (populated by the `b` size action),
-        # keyed by volume name; read by `_show_volume_details`.
-        self._volume_sizes: dict[str, int] = {}
-
-        # On-demand per-image Architecture, keyed by image id;
-        # lazily fetched on row-select by ImageActionHandler and read by
-        # `_show_image_details`.
-        self._image_architectures: dict[str, str] = {}
-
-        # On-demand container details (env, health log, start time, restart count),
-        # keyed by container id. Refreshed on row selection/refresh but retained
-        # between fetches so the detail pane keeps the last-known values.
-        self._container_details: dict[str, ContainerDetail] = {}
-
-        # Whether to reveal env vars that look like secrets (`R`).
-        self._reveal_secrets: bool = False
-
-        # Per-tab column sort: (column, reverse), or `None` for insertion order.
-        # Restored from the previous session; unknown columns are ignored.
-        self._sort_state: dict[TabID, tuple[str, bool] | None] = {
-            tab_id: self._session.sort_state.get(tab_id.value)
-            for tab_id in self._resource_registry
-        }
+        # Rows, marks, sort, collapse and dirty flags for every tab live in
+        # core; this mixin only turns rows into cells. Sort is restored from
+        # the previous session; unknown columns are ignored.
+        self._tables = TablesState(
+            {tab_id: entry.kind for tab_id, entry in self._resource_registry.items()},
+            sort_state={
+                tab_id: self._session.sort_state.get(tab_id.value)
+                for tab_id in self._resource_registry
+            },
+        )
 
         for tab_id, entry in self._resource_registry.items():
             table = self.query_one(f"#{entry.table_id}", DataTable)
             self._add_table_columns(table, tab_id, entry)
             table.cursor_type = "row"
+
+    # Temporary read-through aliases onto `self._tables`, kept so existing
+    # tests that inspect the old attributes keep working unchanged while the
+    # UI separation is in progress (local/UI_SEPARATION_PLAN.md, Phase 4
+    # removes them). Each returns the live collection, not a copy.
+    @property
+    def _current(self) -> dict[TabID, list]:
+        return self._tables.rows
+
+    @property
+    def _dirty_tabs(self) -> set[TabID]:
+        return self._tables.dirty
+
+    @property
+    def _collapsed_projects(self) -> set[str]:
+        return self._tables.collapsed_projects
+
+    @property
+    def _marked(self) -> dict[TabID, set[tuple[str, str]]]:
+        return self._tables.marked
+
+    @property
+    def _sort_state(self) -> dict[TabID, tuple[str, bool] | None]:
+        return self._tables.sort_state
+
+    @property
+    def _volume_sizes(self) -> dict[str, int]:
+        return self._details.volume_sizes
 
     def _add_table_columns(
         self, table: DataTable, tab_id: TabID, entry: "ResourceEntry"
@@ -124,7 +114,7 @@ class TableRenderer(_Base):
         # Leading mark column, added separately (not part of ResourceEntry.
         # columns) so every populate method just prepends one cell per row.
         table.add_column("", width=2)
-        sort_state = self._sort_state.get(tab_id)
+        sort_state = self._tables.sort(tab_id)
         for col in entry.columns:
             label = col
             if sort_state is not None and sort_state[0] == col:
@@ -149,14 +139,11 @@ class TableRenderer(_Base):
         if event.column_index == 0:
             return
         col_name = entry.columns[event.column_index - 1]
-        if col_name not in entry.sort_keys:
+        new_sort = self._tables.cycle_sort(active, col_name)
+        if new_sort is None:
             return
-
-        current = self._sort_state.get(active)
-        reverse = not current[1] if current and current[0] == col_name else False
-        self._sort_state[active] = (col_name, reverse)
         if self._persist_session:
-            self._session.sort_state[active.value] = (col_name, reverse)
+            self._session.sort_state[active.value] = new_sort
             save_session(self._session)
 
         table = event.data_table
@@ -164,71 +151,41 @@ class TableRenderer(_Base):
         self._add_table_columns(table, active, entry)
         self._rerender_active_table()
 
-    # TODO: Refactor to reduce complexity.
     def _populate_container_table(
-        self, table: DataTable, items: list[Container] | None = None
+        self, table: DataTable, rows: list[ComposeProject | Container]
     ) -> None:
-        if items is None:
-            assert self.snapshot is not None, _NEEDS_SNAPSHOT_MSG
-            items = self.snapshot.containers
-
-        sort_state = self._sort_state.get(TabID.CONTAINERS)
-        sort_key = None
-        reverse = False
-        if sort_state is not None:
-            col_name, reverse = sort_state
-            sort_key = self._resource_registry[TabID.CONTAINERS].sort_keys.get(col_name)
-
-        projects, standalone = group_by_project(items, key=sort_key, reverse=reverse)
-        marked = self._marked[TabID.CONTAINERS]
-
-        # `_current` is the row-backing list: each row index maps to either a
-        # `ComposeProject` header or a `Container` service/standalone row.
-        rows: list[ComposeProject | Container] = []
-        for project in projects:
-            collapsed = project.name in self._collapsed_projects
-            glyph = "▸" if collapsed else "▾"
-            config = (
-                os.path.basename(project.config_files.split(",")[0].strip())
-                if project.config_files
-                else ""
-            )
-            rows.append(project)
-            dot = status_dot(project_status_color(project))
-            _safe_row(
-                table,
-                "",  # project headers can't be marked
-                SafeMarkup(f"[b]{glyph}[/b] {dot} [b]{escape(project.name)}[/b]"),
-                config,
-            )
-            if collapsed:
-                continue
-            members = project.containers
-            for idx, c in enumerate(members):
-                rows.append(c)
-                branch = "└" if idx == len(members) - 1 else "├"
-                dot = status_dot(status_color(c))
-                name = SafeMarkup(
-                    f"  {branch} {dot} {escape(c.compose_service or c.name)}"
+        """Write container rows: a Compose project header, its service rows
+        (unless collapsed), and standalone containers, in `rows` order."""
+        project: ComposeProject | None = None
+        for row in rows:
+            if isinstance(row, ComposeProject):
+                project = row
+                collapsed = self._tables.is_collapsed(row.name)
+                glyph = "▸" if collapsed else "▾"
+                config = (
+                    os.path.basename(row.config_files.split(",")[0].strip())
+                    if row.config_files
+                    else ""
                 )
+                dot = status_dot(project_status_color(row))
                 _safe_row(
                     table,
-                    _mark_cell(marked, self._row_key(c)),
-                    name,
-                    c.image_name,
+                    "",  # project headers can't be marked
+                    SafeMarkup(f"[b]{glyph}[/b] {dot} [b]{escape(row.name)}[/b]"),
+                    config,
                 )
-
-        for c in standalone:
-            rows.append(c)
-            dot = status_dot(status_color(c))
-            _safe_row(
-                table,
-                _mark_cell(marked, self._row_key(c)),
-                SafeMarkup(f"{dot} {escape(c.name)}"),
-                c.image_name,
-            )
-
-        self._current[TabID.CONTAINERS] = rows
+                continue
+            mark = self._mark_cell(TabID.CONTAINERS, row)
+            dot = status_dot(status_color(row))
+            if row.is_compose and project is not None:
+                last = row is project.containers[-1]
+                branch = "└" if last else "├"
+                name = SafeMarkup(
+                    f"  {branch} {dot} {escape(row.compose_service or row.name)}"
+                )
+            else:
+                name = SafeMarkup(f"{dot} {escape(row.name)}")
+            _safe_row(table, mark, name, row.image_name)
 
     def _rerender_active_table(self) -> None:
         """Re-populate the active tab's table honouring any active search filter.
@@ -253,36 +210,22 @@ class TableRenderer(_Base):
         """
         self._rerender_active_table()
 
-    def _populate_image_table(
-        self, table: DataTable, items: list[Image] | None = None
-    ) -> None:
-        if items is None:
-            assert self.snapshot is not None, _NEEDS_SNAPSHOT_MSG
-            items = self.snapshot.images
-        self._current[TabID.IMAGES] = items
-        marked = self._marked[TabID.IMAGES]
-        for i in items:
+    def _populate_image_table(self, table: DataTable, rows: list[Image]) -> None:
+        for i in rows:
             _safe_row(
                 table,
-                _mark_cell(marked, self._row_key(i)),
+                self._mark_cell(TabID.IMAGES, i),
                 truncate(i.repository, NAME_MAX_CHARS),
                 truncate(i.tag, 10),
                 format_size(i.size_bytes),
                 image_status_markup(i.used_by),
             )
 
-    def _populate_volume_table(
-        self, table: DataTable, items: list[Volume] | None = None
-    ) -> None:
-        if items is None:
-            assert self.snapshot is not None, _NEEDS_SNAPSHOT_MSG
-            items = self.snapshot.volumes
-        self._current[TabID.VOLUMES] = items
-        marked = self._marked[TabID.VOLUMES]
-        for v in items:
+    def _populate_volume_table(self, table: DataTable, rows: list[Volume]) -> None:
+        for v in rows:
             status = markup_green("In Use") if v.used_by else markup_yellow("Orphaned")
             raw = truncate(v.name, NAME_MAX_CHARS, middle=True)
-            size_bytes = self._volume_sizes.get(v.name)
+            size_bytes = self._details.volume_size(v.name)
             # Computed on-demand only (`b`) — never on the snapshot path, it's
             # too slow to fetch on every refresh (see `DockerClient.volume_sizes`).
             size = (
@@ -290,43 +233,23 @@ class TableRenderer(_Base):
                 if size_bytes is not None
                 else SafeMarkup("[dim]—[/]")
             )
-            _safe_row(table, _mark_cell(marked, self._row_key(v)), raw, size, status)
+            _safe_row(table, self._mark_cell(TabID.VOLUMES, v), raw, size, status)
 
-    def _populate_network_table(
-        self, table: DataTable, items: list[Network] | None = None
-    ) -> None:
-        if items is None:
-            assert self.snapshot is not None, _NEEDS_SNAPSHOT_MSG
-            items = self.snapshot.networks
-        self._current[TabID.NETWORKS] = items
-        marked = self._marked[TabID.NETWORKS]
+    def _populate_network_table(self, table: DataTable, rows: list[Network]) -> None:
         containers = self.snapshot.containers if self.snapshot else []
-        for n in items:
+        for n in rows:
             _safe_row(
                 table,
-                _mark_cell(marked, self._row_key(n)),
+                self._mark_cell(TabID.NETWORKS, n),
                 n.name,
                 n.driver,
                 n.scope,
                 network_containers_markup(n, containers),
             )
 
-    def _sort_items(self, tab_id: TabID, entry: "ResourceEntry", items: list) -> list:
-        """Apply the active column sort (if any) to a snapshot/filtered list.
-
-        Used by both `SnapshotManager._apply_snapshot` (plain refresh) and
-        `ResourceSearchController._apply_filter` (search active), so a sort
-        survives both a live `docker events` refresh and search filtering
-        instead of only applying while the search bar happens to be open.
-        """
-        sort_state = self._sort_state.get(tab_id)
-        if sort_state is None:
-            return items
-        col_name, reverse = sort_state
-        sort_key = entry.sort_keys.get(col_name)
-        if sort_key is None:
-            return items
-        return sorted(items, key=sort_key, reverse=reverse)
+    def _mark_cell(self, tab_id: TabID, item: object) -> SafeMarkup | str:
+        """Leading-column cell for a row: the mark glyph if marked, else blank."""
+        return MARK_GLYPH if self._tables.is_marked(tab_id, self._row_key(item)) else ""
 
     def _update_empty_state(
         self,

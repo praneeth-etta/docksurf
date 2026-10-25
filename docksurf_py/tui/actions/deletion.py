@@ -1,7 +1,7 @@
 """ResourceDeletionHandler — confirmation dialogs and dispatched remove calls."""
 
 import logging
-from typing import Callable
+from typing import Any, Callable
 
 from rich.markup import escape
 from textual import work
@@ -11,12 +11,13 @@ from docksurf_py.core.models import (
     CommandErrorKind,
     CommandResult,
     ComposeProject,
-    Container,
-    Image,
-    Network,
-    Volume,
 )
-from docksurf_py.core.state.ops import DeletePlan, bind_delete_command
+from docksurf_py.core.state.ops import (
+    BulkJob,
+    DeletePlan,
+    Refusal,
+    bind_delete_command,
+)
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.widgets import ConfirmDialog
@@ -28,9 +29,9 @@ class ResourceDeletionHandler(_Base):
     """Confirmation dialogs and dispatched remove calls for all resource types.
 
     Per-resource behavior (the confirm message, force-flag logic, and any
-    pre-condition guard) lives in the `_plan_*_delete` methods below, wired
-    into `self._resource_registry` by `DockSurfApp` — `action_delete` itself
-    no longer branches on which tab is active.
+    pre-condition guard) is decided in core (`core/state/ops.py`'s
+    `plan_*_delete`, wired into each tab's `ResourceKind`) — this mixin only
+    shows the dialog or warning and runs the result.
     """
 
     def _apply_if_confirmed(
@@ -55,87 +56,17 @@ class ResourceDeletionHandler(_Base):
                 # Our snapshot is stale — the resource is already gone.
                 self.start_refresh()
 
-    def _plan_container_delete(self, c: Container) -> DeletePlan | None:
-        if not isinstance(c, Container):
+    def _plan_delete(self, tab_id: TabID, item: Any) -> DeletePlan | None:
+        """Core's delete plan for `item`, or None — after warning with the
+        reason when core refuses (in-use volume, built-in network)."""
+        planner = self._resource_registry[tab_id].kind.plan_delete
+        if planner is None:
             return None
-        is_running = c.running
-        msg = (
-            f"Force-remove RUNNING container '{escape(c.name)}'?"
-            if is_running
-            else f"Remove container '{escape(c.name)}'?"
-        )
-        return DeletePlan(
-            confirm_message=msg,
-            command=lambda force: self.docker.remove_container(c.id, force=force),
-            success_message=f"Removed container: {escape(c.name)}",
-            force_default=is_running,
-        )
-
-    def _plan_image_delete(self, img: Image) -> DeletePlan | None:
-        in_use = bool(img.used_by)
-        img_label = f"{escape(img.repository)}:{escape(img.tag)}"
-        remove_ref = img.id if img.is_dangling else f"{img.repository}:{img.tag}"
-        msg = (
-            f"Force-remove IN-USE image '{img_label}'?"
-            if in_use
-            else f"Remove image '{img_label}'?"
-        )
-        if not img.is_dangling:
-            msg += " Untags only — the image is removed once its last tag is gone."
-        return DeletePlan(
-            confirm_message=msg,
-            command=lambda force: self.docker.remove_image(remove_ref, force=force),
-            success_message=f"Removed image {img_label}",
-            force_default=in_use,
-        )
-
-    def _plan_volume_delete(self, vol: Volume) -> DeletePlan | None:
-        if vol.used_by:
-            # Docker's volume-remove `force` only suppresses a "not found"
-            # error — it does not override an in-use guard, so there's no
-            # honest "Force" checkbox to offer here. Name the blockers instead.
-            blockers = ", ".join(escape(name) for name in vol.used_by)
-            self.notify(
-                f"Volume '{escape(vol.name)}' is in use by {blockers} — "
-                "stop them first",
-                severity="warning",
-            )
+        plan = planner(self.docker, item)
+        if isinstance(plan, Refusal):
+            self.notify(plan.message, severity="warning")
             return None
-        return DeletePlan(
-            confirm_message=f"Remove volume '{escape(vol.name)}'?",
-            command=lambda force: self.docker.remove_volume(vol.name),
-            success_message=f"Removed volume {escape(vol.name)}",
-        )
-
-    def _plan_network_delete(self, net: Network) -> DeletePlan | None:
-        if net.name in ("bridge", "host", "none"):
-            self.notify(
-                f"Cannot remove built-in network '{escape(net.name)}'",
-                severity="warning",
-            )
-            return None
-
-        def _remove(force: bool) -> CommandResult:
-            # The Docker API has no real "force remove" for networks — every
-            # attached endpoint must be disconnected first.
-            if force:
-                for endpoint in net.endpoints:
-                    self.docker.disconnect_container(net.name, endpoint.container_name)
-            return self.docker.remove_network(net.name)
-
-        has_endpoints = bool(net.endpoints)
-        msg = (
-            f"Force-remove network '{escape(net.name)}'? This disconnects "
-            f"{len(net.endpoints)} attached container(s) first."
-            if has_endpoints
-            else f"Remove network '{escape(net.name)}'?"
-        )
-        return DeletePlan(
-            confirm_message=msg,
-            command=_remove,
-            success_message=f"Removed network {escape(net.name)}",
-            force_default=True if has_endpoints else None,
-        )
+        return plan
 
     @work
     async def action_delete(self) -> None:
@@ -146,7 +77,7 @@ class ResourceDeletionHandler(_Base):
         if entry is None:
             return
 
-        if self._marked.get(active):
+        if self._tables.has_marks(active):
             await self._bulk_delete(active)
             return
 
@@ -162,7 +93,7 @@ class ResourceDeletionHandler(_Base):
             self.action_compose_down()
             return
 
-        plan = entry.plan_delete(item)
+        plan = self._plan_delete(active, item)
         if plan is None:
             return
 
@@ -187,11 +118,11 @@ class ResourceDeletionHandler(_Base):
         excluded from the batch.
         """
         entry = self._resource_registry[tab_id]
-        jobs: list[tuple[tuple[str, str], str, Callable[[], CommandResult]]] = []
+        jobs: list[BulkJob] = []
         names: list[str] = []
         for item in self._marked_items(tab_id):
             key = self._row_key(item)
-            plan = entry.plan_delete(item)
+            plan = self._plan_delete(tab_id, item)
             if key is None or plan is None:
                 continue
             name = _display_name(item)
@@ -203,7 +134,7 @@ class ResourceDeletionHandler(_Base):
             self.notify(
                 f"No marked {entry.label}s eligible to delete", severity="warning"
             )
-            self._marked[tab_id] = set()
+            self._tables.clear_marks(tab_id)
             self._rerender_active_table()
             return
 

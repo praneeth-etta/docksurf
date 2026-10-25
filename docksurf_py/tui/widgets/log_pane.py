@@ -18,8 +18,7 @@ from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, RichLog, Select
 
-from docksurf_py.core.render.logs import render_log_line
-from docksurf_py.core.state.logs import buffer_to_text, line_matches
+from docksurf_py.core.state.logs import LOG_BUFFER_MAXLEN, LogBuffer
 from docksurf_py.core.types import LogLine, LogOptions
 from docksurf_py.tui.ids import (
     BTN_EXPAND_ID,
@@ -33,9 +32,8 @@ from docksurf_py.tui.ids import (
     LOG_PANE_VIEW_ID,
 )
 
-# Cap LogPane._line_buffer so tailing a noisy container can't grow memory
-# without bound. Export only includes the most recent `_LOG_BUFFER_MAXLEN` lines.
-_LOG_BUFFER_MAXLEN = 20_000
+# Buffer bound lives with the buffer in core; re-exported for existing tests.
+_LOG_BUFFER_MAXLEN = LOG_BUFFER_MAXLEN
 
 # How often the UI drains queued log lines. Batching avoids per-line
 # cross-thread dispatch under heavy log traffic, keeping the UI responsive at
@@ -158,7 +156,8 @@ class LogPane(Widget):
         self._log_stream: LogSource | None = None
         self._expanded = False
         self._stream_factory: Callable[[str, LogOptions], LogSource] | None = None
-        self._line_buffer: deque[LogLine] = deque(maxlen=_LOG_BUFFER_MAXLEN)
+        # Lines, filter, timestamps toggle and match navigation live in core.
+        self._buffer = LogBuffer()
         # Lines the pump thread has queued since the last UI-thread drain.
         # Swapped out for a fresh list under `_pending_lock` on each drain —
         # the pump thread only ever appends, so the lock's critical sections
@@ -169,16 +168,37 @@ class LogPane(Widget):
         # Cached at mount so the pump-thread drain (and every other hot-path
         # write) skips a `query_one` per call.
         self._log_view: RichLog | None = None
-        self._filter: str = ""
         self._filter_timer: Timer | None = None
         self._options = default_options or LogOptions()
-        self._show_timestamps = False
         self._wrap = False
-        # When a filter is active every visible line is a match, so the k-th
-        # match sits at rendered row k (no-wrap). `_match_count` is that visible
-        # count; `_match_cursor` is the -1-until-navigated jump position.
-        self._match_count = 0
-        self._match_cursor = -1
+
+    # Temporary aliases onto `self._buffer`, kept so existing tests that
+    # inspect (and set `_filter` on) the pane keep working unchanged while the
+    # UI separation is in progress (local/UI_SEPARATION_PLAN.md, Phase 4
+    # removes them).
+    @property
+    def _line_buffer(self) -> deque[LogLine]:
+        return self._buffer.lines
+
+    @property
+    def _filter(self) -> str:
+        return self._buffer.filter
+
+    @_filter.setter
+    def _filter(self, value: str) -> None:
+        self._buffer.filter = value
+
+    @property
+    def _show_timestamps(self) -> bool:
+        return self._buffer.show_timestamps
+
+    @property
+    def _match_count(self) -> int:
+        return self._buffer.match_count
+
+    @property
+    def _match_cursor(self) -> int:
+        return self._buffer.match_cursor
 
     def compose(self) -> ComposeResult:
         with Horizontal(id=LOG_PANE_TOOLBAR_ID):
@@ -228,10 +248,7 @@ class LogPane(Widget):
         self._container_id = container_id
         self._container_name = container_name
         self._stream_factory = stream_factory
-        self._line_buffer.clear()
-        self._filter = ""
-        self._match_count = 0
-        self._match_cursor = -1
+        self._buffer.reset(keep_filter=False)
         search_bar = self.query_one(f"#{LOG_PANE_SEARCH_ID}", Input)
         search_bar.value = ""
         search_bar.display = False
@@ -240,16 +257,7 @@ class LogPane(Widget):
         self._update_header()
 
     def _update_header(self) -> None:
-        if self._filter:
-            if self._match_count == 0:
-                match = "  |  [dim]no matches[/]"
-            elif self._match_cursor >= 0:
-                match = f"  |  match {self._match_cursor + 1}/{self._match_count}"
-            else:
-                match = f"  |  {self._match_count} matches"
-            filter_hint = f"  |  filter: [bold]{escape(self._filter)}[/]{match}"
-        else:
-            filter_hint = ""
+        filter_hint = self._buffer.filter_hint()
         if self._following and self._paused:
             state = "  |  [bold yellow][PAUSED][/]"
         elif self._following:
@@ -271,7 +279,7 @@ class LogPane(Widget):
         self._update_header()
 
     def clear_log(self) -> None:
-        self._line_buffer.clear()
+        self._buffer.lines.clear()
         self._view.clear()
 
     def toggle_search(self) -> None:
@@ -286,16 +294,13 @@ class LogPane(Widget):
         search_bar = self.query_one(f"#{LOG_PANE_SEARCH_ID}", Input)
         search_bar.display = False
         search_bar.value = ""
-        self._filter = ""
-        self._match_cursor = -1
+        self._buffer.set_filter("")
         self._render_to_view()
         self._update_header()
 
     @on(Input.Changed, f"#{LOG_PANE_SEARCH_ID}")
     def _on_filter_changed(self, event: Input.Changed) -> None:
-        self._filter = event.value
-        # A new term resets the jump cursor; the count is recomputed on render.
-        self._match_cursor = -1
+        self._buffer.set_filter(event.value)
         if self._filter_timer is not None:
             self._filter_timer.stop()
         self._filter_timer = self.set_timer(0.2, self._render_to_view)
@@ -316,40 +321,22 @@ class LogPane(Widget):
     def _render_to_view(self) -> None:
         log_view = self._view
         log_view.clear()
-        term = self._filter
-        count = 0
-        for line in self._line_buffer:
-            if line_matches(line, term):
-                log_view.write(render_log_line(line, term, self._show_timestamps))
-                if term:
-                    count += 1
-        self._match_count = count
-        if self._match_cursor >= count:
-            self._match_cursor = count - 1
+        for markup in self._buffer.render_all():
+            log_view.write(markup)
         self._update_header()
 
     def _store_line(self, line: LogLine) -> None:
-        return self._line_buffer.append(line)
-
-    def _render_line(self, line: LogLine) -> None:
-        if line_matches(line, self._filter):
-            rendered = render_log_line(line, self._filter, self._show_timestamps)
-            self._view.write(rendered)
-            if self._filter:
-                self._match_count += 1
+        self._buffer.lines.append(line)
 
     def _ingest_batch(self, batch: list[LogLine]) -> None:
         """Apply one drained batch: store every line, render only if not
-        paused — mirrors what per-line `_store_line`/`_render_line` did, just
-        amortized over a batch instead of one `call_from_thread` hop each."""
-        for line in batch:
-            self._store_line(line)
-        if not self._paused:
-            for line in batch:
-                self._render_line(line)
+        paused — one pass per batch instead of one `call_from_thread` hop
+        per line."""
+        for markup in self._buffer.ingest(batch, render=not self._paused):
+            self._view.write(markup)
 
     def toggle_timestamps(self) -> None:
-        self._show_timestamps = not self._show_timestamps
+        self._buffer.toggle_timestamps()
         self._render_to_view()
 
     def toggle_wrap(self) -> None:
@@ -365,13 +352,10 @@ class LogPane(Widget):
         Only meaningful while a filter is active (every visible line is then a
         match). Wraps around the ends like a pager. Under `wrap` on, the scroll
         target is approximate (a wrapped match spans several rows)."""
-        if self._match_count == 0:
+        row = self._buffer.jump(delta)
+        if row is None:
             return
-        if self._match_cursor < 0:
-            self._match_cursor = 0 if delta > 0 else self._match_count - 1
-        else:
-            self._match_cursor = (self._match_cursor + delta) % self._match_count
-        self._view.scroll_to(y=self._match_cursor, animate=False)
+        self._view.scroll_to(y=row, animate=False)
         self._update_header()
 
     def jump_home(self) -> None:
@@ -382,15 +366,13 @@ class LogPane(Widget):
 
     def export_text(self) -> str:
         """The full buffer as plain text (timestamps + stderr markers)."""
-        return buffer_to_text(self._line_buffer, show_ts=True)
+        return self._buffer.export_text()
 
     def set_options(self, options: LogOptions) -> None:
         """Apply new tail/since options — re-subscribes the stream from scratch."""
         self._options = options
         self.stop_follow()
-        self._line_buffer.clear()
-        self._match_cursor = -1
-        self._match_count = 0
+        self._buffer.reset(keep_filter=True)
         self._view.clear()
         self._start_follow()
         self._update_header()

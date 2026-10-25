@@ -33,14 +33,24 @@ from docksurf_py.core.config import DEFAULT_CONFIG_PATH, Config, load_config
 from docksurf_py.core.models import (
     CommandResult,
     Container,
-    ContainerDetail,
     DockerSnapshot,
 )
 from docksurf_py.core.paths import DATA_DIR
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.session import SessionState, load_session, save_session
-from docksurf_py.core.state.ops import DeletePlan
+from docksurf_py.core.state.details import DetailCache, LiveTargets
+from docksurf_py.core.state.ops import (
+    BulkJob,
+    DeletePlan,
+    plan_container_delete,
+    plan_image_delete,
+    plan_network_delete,
+    plan_volume_delete,
+)
+from docksurf_py.core.state.refresh import RefreshCoordinator
 from docksurf_py.core.state.tables import (
+    ResourceKind,
+    TablesState,
     matches_container,
     matches_image,
     matches_network,
@@ -148,16 +158,16 @@ class ResourceEntry:
     each of the four resource types separately.
     """
 
+    kind: ResourceKind  # the core half: label, items, matcher, sort keys, delete plan
     table_id: TableID
     columns: tuple[str, ...]
-    label: str  # singular, human-readable — used in "No {label} selected"
-    snapshot_items: Callable[[DockerSnapshot], list]
-    populate: Callable[..., None]  # (table, items=None)
+    populate: Callable[[DataTable, list], None]  # (table, rows) -> cells
     show_details: Callable[[DetailPane, int], None]
-    matches: Callable[[Any, str], bool]
-    plan_delete: Callable[[Any], DeletePlan | None]
-    sort_keys: dict[str, Callable[[Any], Any]]
     column_widths: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def label(self) -> str:
+        return self.kind.label
 
 
 class AppContext(Protocol):
@@ -178,16 +188,11 @@ class AppContext(Protocol):
     config: Config
     _session: SessionState
     _persist_session: bool
-    _current: dict[TabID, list]
-    _dirty_tabs: set[TabID]
     _resource_registry: dict[TabID, ResourceEntry]
-    _collapsed_projects: set[str]
-    _marked: dict[TabID, set[tuple[str, str]]]
-    _volume_sizes: dict[str, int]
-    _image_architectures: dict[str, str]
-    _container_details: dict[str, ContainerDetail]
-    _reveal_secrets: bool
-    _sort_state: dict[TabID, tuple[str, bool] | None]
+    _tables: TablesState
+    _refresh: RefreshCoordinator
+    _details: DetailCache
+    _live: LiveTargets
     is_running: bool  # really a textual.app.App property
 
     def start_refresh(self) -> None: ...
@@ -199,7 +204,6 @@ class AppContext(Protocol):
     def _update_empty_state(
         self, tab_id: TabID, entry: ResourceEntry, items: list, query: str = ""
     ) -> None: ...
-    def _sort_items(self, tab_id: TabID, entry: ResourceEntry, items: list) -> list: ...
     def _sync_stats(self) -> None: ...
     def _sync_top(self) -> None: ...
     def _sync_image_architecture(self) -> None: ...
@@ -214,11 +218,12 @@ class AppContext(Protocol):
         self, tab_id: TabID, focus_key: tuple[str, str] | None
     ) -> None: ...
     def _marked_items(self, tab_id: TabID) -> list[Any]: ...
+    def _plan_delete(self, tab_id: TabID, item: Any) -> DeletePlan | None: ...
     def _run_bulk(
         self,
         tab_id: TabID,
         verb: str,
-        jobs: list[tuple[tuple[str, str], str, Callable[[], CommandResult]]],
+        jobs: list[BulkJob],
     ) -> None: ...
     def action_compose_stop(self) -> None: ...
     def action_compose_start(self) -> None: ...
@@ -351,68 +356,80 @@ class DockSurfApp(
         self.config = config or Config()
         self._session = session or SessionState()
         self._persist_session = persist_session
+        self._refresh = RefreshCoordinator()
+        self._details = DetailCache()
+        self._live = LiveTargets()
         self._resource_registry = {
             TabID.CONTAINERS: ResourceEntry(
+                kind=ResourceKind(
+                    label="container",
+                    plan_delete=plan_container_delete,
+                    snapshot_items=lambda snap: snap.containers,
+                    matches=matches_container,
+                    sort_keys={
+                        "Name": lambda c: c.name.lower(),
+                        "Image": lambda c: c.image_name.lower(),
+                    },
+                    groups_by_project=True,
+                ),
                 table_id=TableID.CONTAINERS,
                 columns=("Name", "Image"),
-                label="container",
-                snapshot_items=lambda snap: snap.containers,
                 populate=self._populate_container_table,
                 show_details=self._show_container_details,
-                matches=matches_container,
-                plan_delete=self._plan_container_delete,
-                sort_keys={
-                    "Name": lambda c: c.name.lower(),
-                    "Image": lambda c: c.image_name.lower(),
-                },
             ),
             TabID.IMAGES: ResourceEntry(
+                kind=ResourceKind(
+                    label="image",
+                    plan_delete=plan_image_delete,
+                    snapshot_items=lambda snap: snap.images,
+                    matches=matches_image,
+                    sort_keys={
+                        "Repository": lambda i: i.repository.lower(),
+                        "Tag": lambda i: i.tag.lower(),
+                        "Size": lambda i: i.size_bytes,
+                        "Status": lambda i: bool(i.used_by),
+                    },
+                ),
                 table_id=TableID.IMAGES,
                 columns=("Repository", "Tag", "Size", "Status"),
-                label="image",
-                snapshot_items=lambda snap: snap.images,
                 populate=self._populate_image_table,
                 show_details=self._show_image_details,
-                matches=matches_image,
-                plan_delete=self._plan_image_delete,
-                sort_keys={
-                    "Repository": lambda i: i.repository.lower(),
-                    "Tag": lambda i: i.tag.lower(),
-                    "Size": lambda i: i.size_bytes,
-                    "Status": lambda i: bool(i.used_by),
-                },
                 column_widths={"Tag": 10, "Size": 9, "Status": 8},
             ),
             TabID.VOLUMES: ResourceEntry(
+                kind=ResourceKind(
+                    label="volume",
+                    plan_delete=plan_volume_delete,
+                    snapshot_items=lambda snap: snap.volumes,
+                    matches=matches_volume,
+                    sort_keys={
+                        "Name": lambda v: v.name.lower(),
+                        "Size": lambda v: self._details.volume_sizes.get(v.name, -1),
+                        "Status": lambda v: bool(v.used_by),
+                    },
+                ),
                 table_id=TableID.VOLUMES,
                 columns=("Name", "Size", "Status"),
-                label="volume",
-                snapshot_items=lambda snap: snap.volumes,
                 populate=self._populate_volume_table,
                 show_details=self._show_volume_details,
-                matches=matches_volume,
-                plan_delete=self._plan_volume_delete,
-                sort_keys={
-                    "Name": lambda v: v.name.lower(),
-                    "Size": lambda v: self._volume_sizes.get(v.name, -1),
-                    "Status": lambda v: bool(v.used_by),
-                },
                 column_widths={"Size": 9, "Status": 9},
             ),
             TabID.NETWORKS: ResourceEntry(
+                kind=ResourceKind(
+                    label="network",
+                    plan_delete=plan_network_delete,
+                    snapshot_items=lambda snap: snap.networks,
+                    matches=matches_network,
+                    sort_keys={
+                        "Name": lambda n: n.name.lower(),
+                        "Driver": lambda n: n.driver.lower(),
+                        "Scope": lambda n: n.scope.lower(),
+                    },
+                ),
                 table_id=TableID.NETWORKS,
                 columns=("Name", "Driver", "Scope", "Containers"),
-                label="network",
-                snapshot_items=lambda snap: snap.networks,
                 populate=self._populate_network_table,
                 show_details=self._show_network_details,
-                matches=matches_network,
-                sort_keys={
-                    "Name": lambda n: n.name.lower(),
-                    "Driver": lambda n: n.driver.lower(),
-                    "Scope": lambda n: n.scope.lower(),
-                },
-                plan_delete=self._plan_network_delete,
             ),
         }
 
@@ -530,7 +547,7 @@ class DockSurfApp(
         # Footer's per-table BINDINGS scoping is deterministic.
         if not self.query_one(f"#{SEARCH_BAR_ID}", Input).display:
             table.focus()
-        current = self._current.get(active, [])
+        current = self._tables.rows.get(active, [])
         if not current:
             pane.clear_details()
             self._sync_stats()
@@ -573,7 +590,7 @@ class DockSurfApp(
     @on(TabbedContent.TabActivated)
     def clear_on_tab_switch(self) -> None:
         active = self.query_one(TabbedContent).active
-        if active in self._dirty_tabs:
+        if self._tables.is_dirty(active):
             self._populate_tab(active)
         self._auto_select_first()
         if self._persist_session:

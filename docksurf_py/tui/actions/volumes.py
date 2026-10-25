@@ -73,7 +73,7 @@ class VolumeActionHandler(_Base):
         self.call_from_thread(self._apply_volume_sizes, sizes)
 
     def _apply_volume_sizes(self, sizes: dict[str, int]) -> None:
-        self._volume_sizes = sizes
+        self._details.set_volume_sizes(sizes)
         if self.query_one(TabbedContent).active != TabID.VOLUMES:
             return
         # Re-render the table (Size column) and the focused volume's detail

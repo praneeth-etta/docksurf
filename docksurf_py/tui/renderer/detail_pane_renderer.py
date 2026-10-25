@@ -50,7 +50,7 @@ class DetailPaneRenderer(_Base):
     """Formats and pushes resource details into the side pane on row highlight."""
 
     def _show_container_details(self, pane: DetailPane, row: int) -> None:
-        items = self._current.get(TabID.CONTAINERS, [])
+        items = self._tables.rows.get(TabID.CONTAINERS, [])
         if row >= len(items):
             return
         item = items[row]
@@ -61,7 +61,7 @@ class DetailPaneRenderer(_Base):
         # env/health-log/started-at/restart-count aren't in the list summary.
         # They're fetched lazily on selection, cached by container id, and remain
         # `None` until that fetch succeeds (or fails).
-        detail = self._container_details.get(c.id)
+        detail = self._details.container_detail(c.id)
 
         identity = {"ID": _dim(c.id), "Image": c.image_name}
         if c.is_compose:
@@ -98,10 +98,10 @@ class DetailPaneRenderer(_Base):
         pane.update_details(
             f"Container: {c.name}",
             {"Identity": identity, "Runtime": runtime, "Network": network},
-            env_text=format_env(detail.env, reveal=self._reveal_secrets)
+            env_text=format_env(detail.env, reveal=self._details.reveal_secrets)
             if detail
             else "…",
-            env_masked=not self._reveal_secrets,
+            env_masked=not self._details.reveal_secrets,
             health_log=format_health_log(detail.health_log) if detail else None,
             border_style=status_color(c),
         )
@@ -126,7 +126,7 @@ class DetailPaneRenderer(_Base):
         pane.clear_topology()
 
     def _show_image_details(self, pane: DetailPane, row: int) -> None:
-        images = self._current.get(TabID.IMAGES, [])
+        images = self._tables.rows.get(TabID.IMAGES, [])
         if row >= len(images):
             return
         image = images[row]
@@ -143,7 +143,7 @@ class DetailPaneRenderer(_Base):
 
         # Fetched lazily on row-select and cached by
         # ImageActionHandler._sync_image_architecture; "…" until it resolves.
-        architecture = self._image_architectures.get(image.id, "…")
+        architecture = self._details.architecture(image.id)
 
         identity = {
             "ID": _dim(image.id.removeprefix("sha256:")[:12] if image.id else "N/A"),
@@ -165,7 +165,7 @@ class DetailPaneRenderer(_Base):
         pane.clear_topology()
 
     def _show_volume_details(self, pane: DetailPane, row: int) -> None:
-        volumes = self._current.get(TabID.VOLUMES, [])
+        volumes = self._tables.rows.get(TabID.VOLUMES, [])
         if row >= len(volumes):
             return
         volume = volumes[row]
@@ -183,7 +183,7 @@ class DetailPaneRenderer(_Base):
             ),
         }
         # Size is fetched on-demand (`b`); once known it's cached and shown here.
-        size = self._volume_sizes.get(volume.name)
+        size = self._details.volume_size(volume.name)
         if size is not None:
             usage["Size on disk"] = format_size(size)
         pane.update_details(
@@ -194,7 +194,7 @@ class DetailPaneRenderer(_Base):
         pane.clear_topology()
 
     def _show_network_details(self, pane: DetailPane, row: int) -> None:
-        networks = self._current.get(TabID.NETWORKS, [])
+        networks = self._tables.rows.get(TabID.NETWORKS, [])
         if row >= len(networks):
             return
         network = networks[row]

@@ -40,27 +40,36 @@ logger = logging.getLogger(__name__)
 class LiveStatsController(_Base):
     """Streams stats for the focused running container; owns the `w` df screen.
 
-    Follows the `LogPane` streaming pattern — a `_stats_generation` counter plus
+    Follows the `LogPane` streaming pattern — a `LiveTargets.generation` counter plus
     a daemon thread marshalling samples back via `call_from_thread` — but keyed
     to the current selection rather than a toggle. `_sync_stats()` is idempotent:
     it only (re)starts the stream when the focused target actually changes, so a
     periodic/event refresh that re-selects the same container doesn't restart it.
     """
 
-    _stats_target: str | None = None
-    _stats_generation: int = 0
+    # Which container stats/top follow is core's `LiveTargets` (`self._live`,
+    # created by `DockSurfApp.__init__`); the stream handle and threads are
+    # this mixin's.
     _stats_stream: StatsStream | None = None
-    _top_target: str | None = None
+
+    # Temporary read-through aliases onto `self._live`, kept so existing tests
+    # that inspect them keep working unchanged while the UI separation is in
+    # progress (local/UI_SEPARATION_PLAN.md, Phase 4 removes them).
+    @property
+    def _stats_target(self) -> str | None:
+        return self._live.stats_target
+
+    @property
+    def _top_target(self) -> str | None:
+        return self._live.top_target
 
     def _sync_stats(self) -> None:
         item = None
         if self.query_one(TabbedContent).active == TabID.CONTAINERS:
             item = self._get_focused_resource(TabID.CONTAINERS)
-        target = item.id if isinstance(item, Container) and item.running else None
-
-        if target == self._stats_target:
+        target = self._live.stats_target_for(item)
+        if not self._live.retarget_stats(target):
             return
-        self._stats_target = target
 
         self._stop_stats_stream()
         pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
@@ -72,8 +81,7 @@ class LiveStatsController(_Base):
         self._start_stats_stream(target, item.name)
 
     def _start_stats_stream(self, container_id: str, name: str) -> None:
-        self._stats_generation += 1
-        generation = self._stats_generation
+        generation = self._live.next_generation()
         stream = self.docker.stream_stats(container_id)
         self._stats_stream = stream
         threading.Thread(
@@ -82,7 +90,7 @@ class LiveStatsController(_Base):
 
     def _pump_stats(self, generation: int, stream: StatsStream, name: str) -> None:
         for stats in stream:
-            if self._stats_generation != generation:
+            if not self._live.is_current(generation):
                 break
             try:
                 self.call_from_thread(
@@ -95,22 +103,22 @@ class LiveStatsController(_Base):
         self, generation: int, stats: ContainerStats, name: str
     ) -> None:
         # A late sample from a superseded stream must not overwrite the pane.
-        if self._stats_generation != generation:
+        if not self._live.is_current(generation):
             return
         pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
         pane.update_live_stats(render_stats(stats, name))
 
     def _stop_stats_stream(self) -> None:
-        self._stats_generation += 1  # invalidate any in-flight pump thread
+        self._live.next_generation()  # invalidate any in-flight pump thread
         if self._stats_stream is not None:
             self._stats_stream.stop()
             self._stats_stream = None
 
     def stop_stats(self) -> None:
         """Stop streaming entirely (app teardown)."""
-        self._stats_target = None
+        self._live.retarget_stats(None)
         self._stop_stats_stream()
-        self._top_target = None
+        self._live.clear_top()
 
     @work(thread=True)
     def action_system_df(self) -> None:
@@ -137,8 +145,7 @@ class LiveStatsController(_Base):
             item = self._get_focused_resource(TabID.CONTAINERS)
         focused_id = item.id if isinstance(item, Container) else None
 
-        if self._top_target is not None and focused_id != self._top_target:
-            self._top_target = None
+        if self._live.drop_stale_top(focused_id):
             self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).clear_processes()
 
     def action_container_top(self) -> None:
@@ -159,13 +166,11 @@ class LiveStatsController(_Base):
             self.notify(f"{escape(c.name)} is not running", severity="warning")
             return
 
-        if self._top_target == c.id:
-            # Already showing this container's processes — toggle off.
-            self._top_target = None
+        if not self._live.toggle_top(c.id):
+            # Was already showing this container's processes — toggled off.
             self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).clear_processes()
             return
 
-        self._top_target = c.id
         pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
         pane.update_processes(SafeMarkup("[dim]fetching processes…[/]"))
         self._fetch_top(c.id, c.name)
@@ -180,11 +185,11 @@ class LiveStatsController(_Base):
     ) -> None:
         # The selection may have moved (or `t` toggled off) since the fetch
         # started — a stale result must not overwrite what's shown now.
-        if self._top_target != container_id:
+        if not self._live.accepts_top_result(container_id):
             return
         pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
         if top is None:
-            self._top_target = None
+            self._live.clear_top()
             pane.clear_processes()
             self.notify(
                 f"Could not fetch processes for {escape(name)}", severity="error"

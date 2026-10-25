@@ -21,7 +21,7 @@ class ResourceFocusResolver(_Base):
         entry = self._resource_registry.get(tab_id)
         if entry is None:
             return None
-        current_list = self._current.get(tab_id, [])
+        current_list = self._tables.rows.get(tab_id, [])
         table = self.query_one(f"#{entry.table_id}", DataTable)
         row = table.cursor_row
         if not current_list or row is None or row >= len(current_list):

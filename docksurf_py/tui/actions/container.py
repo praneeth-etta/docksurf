@@ -22,8 +22,12 @@ from docksurf_py.core.models import (
 from docksurf_py.core.state.logs import write_log_export
 from docksurf_py.core.state.ops import (
     EXEC_SHELL_CANDIDATES,
+    BulkJob,
+    already_running_reason,
     build_cp_paths,
     build_exec_argv,
+    not_running_reason,
+    pause_verb,
     select_exec_shell,
 )
 from docksurf_py.core.types import LogOptions, TabID
@@ -72,9 +76,6 @@ class ContainerActionHandler(_Base):
     """Start, stop, restart, exec, and log actions scoped to containers."""
 
     _CONTAINER_TAB_HINT = "Switch to the Containers tab and select a container"
-    # Container whose detail fetch is currently in flight (see
-    # _sync_container_detail).
-    _detail_target: str | None = None
 
     def _sync_container_detail(self) -> None:
         """Lazily fetch or refresh the focused container's detail-only fields
@@ -82,15 +83,15 @@ class ContainerActionHandler(_Base):
 
         Unlike `ImageActionHandler._sync_image_architecture`, this always
         re-fetches because these fields can change while a container remains
-        selected. `_detail_target` only prevents duplicate in-flight fetches for
-        the same container.
+        selected. `DetailCache.want_container_detail` only prevents duplicate
+        in-flight fetches for the same container.
         """
         c = self._get_focused_container()
         target = c.id if c is not None else None
 
-        if target is None or target == self._detail_target:
+        if not self._details.want_container_detail(target):
             return
-        self._detail_target = target
+        assert target is not None
         self._fetch_container_detail(target)
 
     @work(thread=True)
@@ -101,10 +102,7 @@ class ContainerActionHandler(_Base):
     def _apply_container_detail(
         self, container_id: str, detail: ContainerDetail | None
     ) -> None:
-        if detail is not None:
-            self._container_details[container_id] = detail
-        if self._detail_target == container_id:
-            self._detail_target = None
+        self._details.store_container_detail(container_id, detail)
         if self.query_one(TabbedContent).active != TabID.CONTAINERS:
             return
         entry = self._resource_registry[TabID.CONTAINERS]
@@ -173,7 +171,7 @@ class ContainerActionHandler(_Base):
         """True only when there are marked containers AND the Containers tab
         is active. Without the tab guard, pressing a bulk verb while on
         another tab would silently act on marks left over from Containers."""
-        return bool(self._marked.get(TabID.CONTAINERS)) and (
+        return self._tables.has_marks(TabID.CONTAINERS) and (
             self.query_one(TabbedContent).active == TabID.CONTAINERS
         )
 
@@ -194,9 +192,7 @@ class ContainerActionHandler(_Base):
         self._run_on_focused_container(
             command=self.docker.stop_container,
             success_msg=lambda c: f"Stopped {escape(c.name)}",
-            guard=lambda c: (
-                f"{escape(c.name)} is not running" if not c.running else None
-            ),
+            guard=not_running_reason,
         )
 
     def action_start_container(self) -> None:
@@ -213,9 +209,7 @@ class ContainerActionHandler(_Base):
         self._run_on_focused_container(
             command=self.docker.start_container,
             success_msg=lambda c: f"Started {escape(c.name)}",
-            guard=lambda c: (
-                f"{escape(c.name)} is already running" if c.running else None
-            ),
+            guard=already_running_reason,
         )
 
     def _run_bulk_container_verb(
@@ -232,7 +226,7 @@ class ContainerActionHandler(_Base):
         def bound(container_id: str) -> Callable[[], CommandResult]:
             return lambda: command(container_id)
 
-        jobs: list[tuple[tuple[str, str], str, Callable[[], CommandResult]]] = []
+        jobs: list[BulkJob] = []
         for c in self._marked_items(TabID.CONTAINERS):
             key = self._row_key(c)
             if include(c) and key is not None:
@@ -242,7 +236,7 @@ class ContainerActionHandler(_Base):
             self.notify(
                 f"No marked containers eligible to {verb.lower()}", severity="warning"
             )
-            self._marked[TabID.CONTAINERS] = set()
+            self._tables.clear_marks(TabID.CONTAINERS)
             self._rerender_active_table()
             return
         self._run_bulk(TabID.CONTAINERS, verb, jobs)
@@ -273,12 +267,13 @@ class ContainerActionHandler(_Base):
         if c is None:
             self.notify(self._CONTAINER_TAB_HINT, severity="warning")
             return
-        if c.state == "paused":
+        verb = pause_verb(c)
+        if verb == "unpause":
             self._run_on_focused_container(
                 command=self.docker.unpause_container,
                 success_msg=lambda c: f"Resumed {escape(c.name)}",
             )
-        elif c.running:
+        elif verb == "pause":
             self._run_on_focused_container(
                 command=self.docker.pause_container,
                 success_msg=lambda c: f"Paused {escape(c.name)}",
@@ -292,9 +287,7 @@ class ContainerActionHandler(_Base):
         self._run_on_focused_container(
             command=self.docker.kill_container,
             success_msg=lambda c: f"Killed {escape(c.name)}",
-            guard=lambda c: (
-                f"{escape(c.name)} is not running" if not c.running else None
-            ),
+            guard=not_running_reason,
         )
 
     def _exec_preflight(self) -> Container | None:
@@ -642,7 +635,7 @@ class ContainerActionHandler(_Base):
 
     def action_toggle_secrets(self) -> None:
         """`R` — reveal or re-mask secret-looking env var values."""
-        self._reveal_secrets: bool = not self._reveal_secrets
+        self._details.toggle_reveal_secrets()
         if self.query_one(TabbedContent).active != TabID.CONTAINERS:
             return
         entry = self._resource_registry[TabID.CONTAINERS]

@@ -63,9 +63,6 @@ class ImageActionHandler(_Base):
     """
 
     _IMAGE_TAB_HINT = "Switch to the Images tab and select an image"
-    # Image id whose Architecture lookup is currently in flight, if any — see
-    # _sync_image_architecture.
-    _architecture_target: str | None = None
 
     def _on_images_tab(self) -> bool:
         return self.query_one(TabbedContent).active == TabID.IMAGES
@@ -86,11 +83,9 @@ class ImageActionHandler(_Base):
         image = self._get_focused_image()
         target = image.id if image is not None else None
 
-        if target is None or target in self._image_architectures:
+        if not self._details.want_architecture(target):
             return
-        if target == self._architecture_target:
-            return
-        self._architecture_target = target
+        assert target is not None
         self._fetch_image_architecture(target)
 
     @work(thread=True)
@@ -101,9 +96,7 @@ class ImageActionHandler(_Base):
     def _apply_image_architecture(
         self, image_id: str, architecture: str | None
     ) -> None:
-        self._image_architectures[image_id] = architecture or "unknown"
-        if self._architecture_target == image_id:
-            self._architecture_target = None
+        self._details.store_architecture(image_id, architecture)
         if not self._on_images_tab():
             return
         entry = self._resource_registry[TabID.IMAGES]
@@ -282,10 +275,7 @@ class ImageActionHandler(_Base):
         if not dangling:
             self.notify("No dangling images")
             return
-        marked = self._marked[TabID.IMAGES]
-        for img in dangling:
-            key = self._row_key(img)
-            if key is not None:
-                marked.add(key)
+        keys = [key for img in dangling if (key := self._row_key(img)) is not None]
+        self._tables.mark(TabID.IMAGES, keys)
         self._rerender_active_table()
         self.notify(f"Marked {len(dangling)} dangling image(s) — press d to remove")
