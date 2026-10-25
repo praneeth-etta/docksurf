@@ -1,0 +1,1068 @@
+{
+  "containers/default": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ],
+      [
+        "",
+        "[green]●[/] cache",
+        "redis:7"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/sorted_name_asc": {
+    "columns": [
+      "",
+      "Name ▲",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ],
+      [
+        "",
+        "[green]●[/] cache",
+        "redis:7"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/sorted_name_desc": {
+    "columns": [
+      "",
+      "Name ▼",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  ├ [green]●[/] worker",
+        "shop-worker:dev"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ],
+      [
+        "",
+        "[green]●[/] cache",
+        "redis:7"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/sorted_image_asc": {
+    "columns": [
+      "",
+      "Name",
+      "Image ▲"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ],
+      [
+        "",
+        "[green]●[/] cache",
+        "redis:7"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/filtered_web": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] web",
+        "shop-web:dev"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/filtered_by_project": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/sorted_then_filtered": {
+    "columns": [
+      "",
+      "Name",
+      "Image ▲"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/collapsed_shop": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▸[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "",
+        "[green]●[/] cache",
+        "redis:7"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/collapsed_then_filtered": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▸[/b] [green]●[/] [b]shop[/b]",
+        ""
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/marked": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "[bold cyan]●[/]",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ],
+      [
+        "[bold cyan]●[/]",
+        "[green]●[/] cache",
+        "redis:7"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/marked_then_refresh": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [
+      [
+        "",
+        "[b]▾[/b] [green]●[/] [b]blog[/b]",
+        ""
+      ],
+      [
+        "",
+        "  └ [green]●[/] app",
+        "ghost:5"
+      ],
+      [
+        "",
+        "[b]▾[/b] [yellow]●[/] [b]shop[/b]",
+        ""
+      ],
+      [
+        "[bold cyan]●[/]",
+        "  ├ [red]●[/] db",
+        "postgres:17"
+      ],
+      [
+        "",
+        "  ├ [green]●[/] web",
+        "shop-web:dev"
+      ],
+      [
+        "",
+        "  └ [green]●[/] worker",
+        "shop-worker:dev"
+      ],
+      [
+        "[bold cyan]●[/]",
+        "[green]●[/] cache",
+        "redis:7"
+      ],
+      [
+        "",
+        "[red]●[/] job",
+        "alpine:3"
+      ],
+      [
+        "",
+        "[green]●[/] \\[weird]name",
+        "busybox:latest"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "containers/empty": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [],
+    "table_visible": false,
+    "empty_message": "No containers — try `docker run hello-world`"
+  },
+  "containers/filter_no_match": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [],
+    "table_visible": false,
+    "empty_message": "No containers match 'zzz'"
+  },
+  "containers/disconnected": {
+    "columns": [
+      "",
+      "Name",
+      "Image"
+    ],
+    "rows": [],
+    "table_visible": false,
+    "empty_message": "Docker daemon is not running\nStart Docker Desktop, or run: sudo systemctl start docker"
+  },
+  "images/default": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "<none>",
+        "<none>",
+        "4.77MB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "registry.example.com/team/ver…",
+        "2026.10.2…",
+        "1.15GB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "alpine",
+        "3",
+        "6.68MB",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/sorted_size_asc": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size ▲",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "<none>",
+        "<none>",
+        "4.77MB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "alpine",
+        "3",
+        "6.68MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "registry.example.com/team/ver…",
+        "2026.10.2…",
+        "1.15GB",
+        "[yellow]Unused[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/sorted_size_desc": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size ▼",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "registry.example.com/team/ver…",
+        "2026.10.2…",
+        "1.15GB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "alpine",
+        "3",
+        "6.68MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "<none>",
+        "<none>",
+        "4.77MB",
+        "[yellow]Unused[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/sorted_status": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size",
+      "Status ▲"
+    ],
+    "rows": [
+      [
+        "",
+        "<none>",
+        "<none>",
+        "4.77MB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "registry.example.com/team/ver…",
+        "2026.10.2…",
+        "1.15GB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "alpine",
+        "3",
+        "6.68MB",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/filtered_nginx": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/marked_one_tag": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "[bold cyan]●[/]",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "<none>",
+        "<none>",
+        "4.77MB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "registry.example.com/team/ver…",
+        "2026.10.2…",
+        "1.15GB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "alpine",
+        "3",
+        "6.68MB",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/marked_one_tag_then_refresh": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "nginx",
+        "latest",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "[bold cyan]●[/]",
+        "nginx",
+        "1.27",
+        "181.20MB",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "<none>",
+        "<none>",
+        "4.77MB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "registry.example.com/team/ver…",
+        "2026.10.2…",
+        "1.15GB",
+        "[yellow]Unused[/]"
+      ],
+      [
+        "",
+        "alpine",
+        "3",
+        "6.68MB",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "images/empty": {
+    "columns": [
+      "",
+      "Repository",
+      "Tag",
+      "Size",
+      "Status"
+    ],
+    "rows": [],
+    "table_visible": false,
+    "empty_message": "No images — try `docker pull nginx`"
+  },
+  "volumes/default": {
+    "columns": [
+      "",
+      "Name",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "pgdata",
+        "[dim]—[/]",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "orphan",
+        "[dim]—[/]",
+        "[yellow]Orphaned[/]"
+      ],
+      [
+        "",
+        "project_extreme…uncation_check",
+        "[dim]—[/]",
+        "[yellow]Orphaned[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "volumes/sorted_name_desc": {
+    "columns": [
+      "",
+      "Name ▼",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "project_extreme…uncation_check",
+        "[dim]—[/]",
+        "[yellow]Orphaned[/]"
+      ],
+      [
+        "",
+        "pgdata",
+        "[dim]—[/]",
+        "[green]In Use[/]"
+      ],
+      [
+        "",
+        "orphan",
+        "[dim]—[/]",
+        "[yellow]Orphaned[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "volumes/sorted_status": {
+    "columns": [
+      "",
+      "Name",
+      "Size",
+      "Status ▲"
+    ],
+    "rows": [
+      [
+        "",
+        "orphan",
+        "[dim]—[/]",
+        "[yellow]Orphaned[/]"
+      ],
+      [
+        "",
+        "project_extreme…uncation_check",
+        "[dim]—[/]",
+        "[yellow]Orphaned[/]"
+      ],
+      [
+        "",
+        "pgdata",
+        "[dim]—[/]",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "volumes/filtered": {
+    "columns": [
+      "",
+      "Name",
+      "Size",
+      "Status"
+    ],
+    "rows": [
+      [
+        "",
+        "pgdata",
+        "[dim]—[/]",
+        "[green]In Use[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "volumes/empty": {
+    "columns": [
+      "",
+      "Name",
+      "Size",
+      "Status"
+    ],
+    "rows": [],
+    "table_visible": false,
+    "empty_message": "No volumes — try `docker volume create my-volume`"
+  },
+  "networks/default": {
+    "columns": [
+      "",
+      "Name",
+      "Driver",
+      "Scope",
+      "Containers"
+    ],
+    "rows": [
+      [
+        "",
+        "bridge",
+        "bridge",
+        "local",
+        "[dim]0[/]"
+      ],
+      [
+        "",
+        "host",
+        "host",
+        "local",
+        "[dim]0[/]"
+      ],
+      [
+        "",
+        "backend",
+        "overlay",
+        "swarm",
+        "[yellow]4 (3 running)[/]"
+      ],
+      [
+        "",
+        "empty",
+        "bridge",
+        "local",
+        "[dim]0[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "networks/sorted_driver": {
+    "columns": [
+      "",
+      "Name",
+      "Driver ▲",
+      "Scope",
+      "Containers"
+    ],
+    "rows": [
+      [
+        "",
+        "bridge",
+        "bridge",
+        "local",
+        "[dim]0[/]"
+      ],
+      [
+        "",
+        "empty",
+        "bridge",
+        "local",
+        "[dim]0[/]"
+      ],
+      [
+        "",
+        "host",
+        "host",
+        "local",
+        "[dim]0[/]"
+      ],
+      [
+        "",
+        "backend",
+        "overlay",
+        "swarm",
+        "[yellow]4 (3 running)[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "networks/filtered": {
+    "columns": [
+      "",
+      "Name",
+      "Driver",
+      "Scope",
+      "Containers"
+    ],
+    "rows": [
+      [
+        "",
+        "backend",
+        "overlay",
+        "swarm",
+        "[yellow]4 (3 running)[/]"
+      ]
+    ],
+    "table_visible": true,
+    "empty_message": null
+  },
+  "networks/empty": {
+    "columns": [
+      "",
+      "Name",
+      "Driver",
+      "Scope",
+      "Containers"
+    ],
+    "rows": [],
+    "table_visible": false,
+    "empty_message": "No networks — try `docker network create my-network`"
+  }
+}
