@@ -33,7 +33,7 @@ from docksurf_py.core.state.ops import (
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import LogOptions, TabID
 from docksurf_py.tui.actions.common import _PROJECT_HINT, _Base
-from docksurf_py.tui.ids import DETAIL_PANE_ID, LOG_PANE_ID
+from docksurf_py.tui.ids import DETAIL_PANE_ID, LIST_PANEL_ID, LOG_PANE_ID
 from docksurf_py.tui.widgets import (
     ContainerPickerScreen,
     DetailPane,
@@ -593,7 +593,7 @@ class ContainerActionHandler(_Base):
         self.push_screen(LogOptionsScreen(log_pane.options), _apply)
 
     def _set_log_expanded(self, log_pane: LogPane, expanded: bool) -> None:
-        self.query_one(TabbedContent).display = not expanded
+        self.query_one(f"#{LIST_PANEL_ID}").display = not expanded
         log_pane.set_expanded(expanded)
 
     @work

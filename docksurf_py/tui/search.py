@@ -22,7 +22,7 @@ else:
 
 
 class ResourceSearchController(_Base):
-    """Opens, closes, and applies the live filter bar across all resource tabs.
+    """Focuses, leaves, and applies the inline filter across all resource tabs.
 
     `on_search_changed`/`on_search_escape` are plain methods, not `@on`-
     decorated, even though they look like Textual message handlers: this
@@ -36,9 +36,7 @@ class ResourceSearchController(_Base):
     _search_filter_timer: Timer | None = None
 
     def action_open_search(self) -> None:
-        search_bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
-        search_bar.display = True
-        search_bar.focus()
+        self.query_one(f"#{SEARCH_BAR_ID}", Input).focus()
 
     def on_search_changed(self, event: Input.Changed) -> None:
         # Debounced like LogPane's filter (log_pane.py): otherwise each keystroke
@@ -46,21 +44,29 @@ class ResourceSearchController(_Base):
         query = event.value
         if self._search_filter_timer is not None:
             self._search_filter_timer.stop()
-        self._search_filter_timer = self.set_timer(
-            0.2, lambda: self._apply_filter(query)
-        )
 
-    def on_search_escape(self, event: Input.Submitted) -> None:
-        self._close_search()
-
-    def _close_search(self) -> None:
-        if self._search_filter_timer is not None:
-            self._search_filter_timer.stop()
+        def apply() -> None:
             self._search_filter_timer = None
-        search_bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
-        search_bar.display = False
-        search_bar.value = ""
-        self._apply_filter("")
+            self._apply_filter(query)
+
+        self._search_filter_timer = self.set_timer(0.2, apply)
+
+    def on_search_escape(self) -> None:
+        """Enter/Escape in the filter: hand focus back to the table. The query
+        stays — it keeps filtering and stays visible in the toolbar."""
+        self._flush_pending_filter()
+        active = self.query_one(TabbedContent).active
+        entry = self._resource_registry.get(active)
+        if entry is not None:
+            self.query_one(f"#{entry.table_id}", DataTable).focus()
+
+    def _flush_pending_filter(self) -> None:
+        """Apply the query now if a debounced filter is still pending."""
+        if self._search_filter_timer is None:
+            return
+        self._search_filter_timer.stop()
+        self._search_filter_timer = None
+        self._apply_filter(self.query_one(f"#{SEARCH_BAR_ID}", Input).value)
 
     def _apply_filter(self, query: str) -> None:
         if not self.snapshot:
@@ -76,3 +82,4 @@ class ResourceSearchController(_Base):
         table.clear(columns=False)
         entry.populate(table, rows)
         self._update_empty_state(active, entry, rows, query)
+        self._repaint_list_panel()

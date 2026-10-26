@@ -50,7 +50,12 @@ BTN_PRUNE_CANCEL_ID = "prune-cancel"
 
 DETAIL_PANE_ID = "detail-pane"
 SEARCH_BAR_ID = "search-bar"
-STATUS_BAR_ID = "status-bar"
+TOP_BAR_ID = "top-bar"
+BOTTOM_BAR_ID = "bottom-bar"
+CHIP_BAR_ID = "chip-bar"
+LIST_PANEL_ID = "list-panel"
+LIST_TOOLBAR_ID = "list-toolbar"
+SIDE_COLUMN_ID = "side-column"
 MAIN_CONTAINER_ID = "main-container"
 REFRESH_LOADING_ID = "refresh-loading"
 
@@ -77,14 +82,19 @@ EMPTY_STATE_HINTS: dict[TabID, str] = {
     TabID.NETWORKS: "No networks — try `docker network create my-network`",
 }
 
-# Persistent "Docker unreachable" banner, docked under the Header for as long
-# as the connection stays down (the StatusBar segment + toast already exist
-# but the toast expires after 12s — see
+# Persistent "Docker unreachable" banner, docked under the top bar for as long
+# as the connection stays down (the top bar's `○ offline`, the bottom bar's
+# message and a toast also exist, but the toast expires after 12s — see
 # SnapshotManager._maybe_notify_connection_change).
 CONNECTION_BANNER_ID = "connection-banner"
 
-# Small, always visible connected/disconnected readout docked under the Header
-CONNECTION_INDICATOR_ID = "connection-indicator"
+# Filter-input placeholder per tab (the one shared query applies to every tab).
+FILTER_PLACEHOLDERS: dict[TabID, str] = {
+    TabID.CONTAINERS: "/ filter by name, image or project…",
+    TabID.IMAGES: "/ filter by repository or tag…",
+    TabID.VOLUMES: "/ filter by name, driver or mountpoint…",
+    TabID.NETWORKS: "/ filter by name, driver or subnet…",
+}
 
 # PromptScreen button IDs
 BTN_PROMPT_OK_ID = "prompt-ok"

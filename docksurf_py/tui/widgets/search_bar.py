@@ -1,13 +1,20 @@
-"""SearchBar — Input subclass that closes on Escape."""
+"""SearchBar — the inline filter input in the list toolbar."""
 
+from textual.message import Message
 from textual.widgets import Input
 
 
 class SearchBar(Input):
-    """Search bar that closes itself on Escape."""
+    """Filter input that hands focus back to the table on Escape.
 
-    BINDINGS = [("escape", "close", "Close")]
+    The query is kept (it stays visible in the toolbar and keeps filtering);
+    clearing it is just editing the text.
+    """
 
-    def action_close(self) -> None:
-        self.display = False
-        self.value = ""
+    BINDINGS = [("escape", "dismiss", "Back to list")]
+
+    class Dismissed(Message):
+        """The user pressed Escape in the filter; the app moves focus back."""
+
+    def action_dismiss(self) -> None:
+        self.post_message(self.Dismissed())

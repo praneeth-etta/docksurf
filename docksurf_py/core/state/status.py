@@ -86,3 +86,19 @@ def project_state_counts(containers: Iterable[Container]) -> tuple[int, int, int
         if is_failed(state):
             failed += 1
     return up, down, failed
+
+
+def partition_counts(containers: Iterable[Container]) -> tuple[int, int, int]:
+    """`(up, down, failed)` as a true partition (they sum to the total), for
+    the global bar and filter chips: failed containers (including unhealthy
+    ones) are counted only under `failed`, never also under up/down."""
+    up = down = failed = 0
+    for c in containers:
+        state = classify(c)
+        if is_failed(state):
+            failed += 1
+        elif is_up(state):
+            up += 1
+        else:
+            down += 1
+    return up, down, failed

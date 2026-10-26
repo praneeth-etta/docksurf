@@ -4,6 +4,7 @@ shown. Decisions only — the tui reads these and paints."""
 from dataclasses import dataclass
 from enum import StrEnum
 
+from docksurf_py.core.render.chrome import Connection
 from docksurf_py.core.render.palette import TIDE_PALETTE, Palette
 
 # Below either bound the side column no longer fits next to the list.
@@ -23,6 +24,8 @@ class ViewState:
     side_hidden: bool = False  # `z` in wide mode: table takes the full width
     side_overlay: bool = False  # `z` in compact mode: side column over the list
     logs_full: bool = False  # `l`: full-view log
+    connection: Connection = "connecting"
+    connection_message: str = ""  # why we're offline; empty while live
 
     def layout_for(self, width: int, height: int) -> LayoutMode:
         if width < COMPACT_BELOW_WIDTH or height < COMPACT_BELOW_HEIGHT:

@@ -12,17 +12,14 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 
-from textual import on
+from textual import events, on
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.theme import Theme
 from textual.widgets import (
     DataTable,
-    Footer,
-    Header,
-    Input,
     LoadingIndicator,
     Static,
     TabbedContent,
@@ -71,16 +68,22 @@ from docksurf_py.tui.actions import (
     SelectionHandler,
     VolumeActionHandler,
 )
+from docksurf_py.tui.chrome import ChromeController
 from docksurf_py.tui.ids import (
+    BOTTOM_BAR_ID,
+    CHIP_BAR_ID,
     CONNECTION_BANNER_ID,
-    CONNECTION_INDICATOR_ID,
     DETAIL_PANE_ID,
     EMPTY_STATE_IDS,
+    FILTER_PLACEHOLDERS,
+    LIST_PANEL_ID,
+    LIST_TOOLBAR_ID,
     LOG_PANE_ID,
     MAIN_CONTAINER_ID,
     REFRESH_LOADING_ID,
     SEARCH_BAR_ID,
-    STATUS_BAR_ID,
+    SIDE_COLUMN_ID,
+    TOP_BAR_ID,
     TableID,
 )
 from docksurf_py.tui.observability import LiveStatsController
@@ -98,7 +101,8 @@ from docksurf_py.tui.themes import (
     palette_from_theme,
 )
 from docksurf_py.tui.widgets import (
-    ConnectionIndicator,
+    BottomBar,
+    ChipBar,
     ContainerTable,
     DetailPane,
     HelpScreen,
@@ -106,7 +110,7 @@ from docksurf_py.tui.widgets import (
     LogPane,
     NetworkTable,
     SearchBar,
-    StatusBar,
+    TopBar,
     VolumeTable,
     WhaleScreen,
 )
@@ -203,8 +207,13 @@ class AppContext(Protocol):
     _live: LiveTargets
     _view: ViewState
     is_running: bool  # really a textual.app.App property
+    theme: str  # really a textual.app.App reactive
 
     def start_refresh(self) -> None: ...
+    def _repaint_chrome(self) -> None: ...
+    def _repaint_top_bar(self) -> None: ...
+    def _repaint_bottom_bar(self) -> None: ...
+    def _repaint_list_panel(self) -> None: ...
     def _auto_select_first(self) -> None: ...
     def _apply_filter(self, query: str) -> None: ...
     def _rerender_containers(self) -> None: ...
@@ -270,6 +279,7 @@ class DockSurfApp(
     NetworkActionHandler,
     ResourceSearchController,
     LiveStatsController,
+    ChromeController,
     App,
 ):
     TITLE = "DockSurf"
@@ -289,9 +299,8 @@ class DockSurfApp(
         # Container/log-viewer actions below are declared here so the Help screen
         # (`action_help`) and command palette (`get_system_commands`) both of which only
         # read `self.BINDINGS` still surface them everywhere. `show=False` keeps them
-        # out of the Footer globally; `ContainerTable.BINDINGS` (widgets/tables.py)
-        # re-declares the same actions with `show=True`, so the Footer only displays
-        # them while the Containers tab's table actually has focus.
+        # out of any key listing; `ContainerTable.BINDINGS` (widgets/tables.py)
+        # re-declares the same actions so they fire while that table has focus.
         Binding("s", "stop_container", "Stop", show=False),
         Binding("S", "start_container", "Start", show=False),
         Binding("x", "restart_container", "Restart", show=False),
@@ -346,6 +355,9 @@ class DockSurfApp(
         Binding("~", "show_whale", "Whale", show=True),
     ]
     CSS_PATH = "app.tcss"
+    # Focus the first table at boot, not the first focusable widget (the filter
+    # input, which would swallow every key until the user leaves it).
+    AUTO_FOCUS = "DataTable"
 
     def __init__(
         self,
@@ -439,43 +451,53 @@ class DockSurfApp(
         }
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield ConnectionIndicator(id=CONNECTION_INDICATOR_ID)
+        yield TopBar(id=TOP_BAR_ID)
         yield Static("", id=CONNECTION_BANNER_ID)
         with Horizontal(id=MAIN_CONTAINER_ID):
-            with TabbedContent():
-                with TabPane("Containers", id=TabID.CONTAINERS):
-                    yield ContainerTable(id=TableID.CONTAINERS)
-                    yield Static(
-                        "", id=EMPTY_STATE_IDS[TabID.CONTAINERS], classes="empty-state"
+            with Vertical(id=LIST_PANEL_ID, classes="panel"):
+                with Horizontal(id=LIST_TOOLBAR_ID):
+                    yield SearchBar(
+                        placeholder=FILTER_PLACEHOLDERS[TabID.CONTAINERS],
+                        id=SEARCH_BAR_ID,
                     )
-                with TabPane("Images", id=TabID.IMAGES):
-                    yield ImageTable(id=TableID.IMAGES)
-                    yield Static(
-                        "", id=EMPTY_STATE_IDS[TabID.IMAGES], classes="empty-state"
-                    )
-                with TabPane("Volumes", id=TabID.VOLUMES):
-                    yield VolumeTable(id=TableID.VOLUMES)
-                    yield Static(
-                        "", id=EMPTY_STATE_IDS[TabID.VOLUMES], classes="empty-state"
-                    )
-                with TabPane("Networks", id=TabID.NETWORKS):
-                    yield NetworkTable(id=TableID.NETWORKS)
-                    yield Static(
-                        "", id=EMPTY_STATE_IDS[TabID.NETWORKS], classes="empty-state"
-                    )
-            yield DetailPane(id=DETAIL_PANE_ID)
-            yield LogPane(
-                id=LOG_PANE_ID,
-                default_options=LogOptions(
-                    tail=self.config.default_log_tail,
-                    since_seconds=self.config.default_log_since_seconds,
-                ),
-            )
+                    yield ChipBar(id=CHIP_BAR_ID)
+                with TabbedContent():
+                    with TabPane("Containers", id=TabID.CONTAINERS):
+                        yield ContainerTable(id=TableID.CONTAINERS)
+                        yield Static(
+                            "",
+                            id=EMPTY_STATE_IDS[TabID.CONTAINERS],
+                            classes="empty-state",
+                        )
+                    with TabPane("Images", id=TabID.IMAGES):
+                        yield ImageTable(id=TableID.IMAGES)
+                        yield Static(
+                            "", id=EMPTY_STATE_IDS[TabID.IMAGES], classes="empty-state"
+                        )
+                    with TabPane("Volumes", id=TabID.VOLUMES):
+                        yield VolumeTable(id=TableID.VOLUMES)
+                        yield Static(
+                            "", id=EMPTY_STATE_IDS[TabID.VOLUMES], classes="empty-state"
+                        )
+                    with TabPane("Networks", id=TabID.NETWORKS):
+                        yield NetworkTable(id=TableID.NETWORKS)
+                        yield Static(
+                            "",
+                            id=EMPTY_STATE_IDS[TabID.NETWORKS],
+                            classes="empty-state",
+                        )
+            with Vertical(id=SIDE_COLUMN_ID):
+                yield DetailPane(id=DETAIL_PANE_ID, classes="panel")
+                yield LogPane(
+                    id=LOG_PANE_ID,
+                    classes="panel",
+                    default_options=LogOptions(
+                        tail=self.config.default_log_tail,
+                        since_seconds=self.config.default_log_since_seconds,
+                    ),
+                )
         yield LoadingIndicator(id=REFRESH_LOADING_ID)
-        yield SearchBar(placeholder="🔍 Filter...", id=SEARCH_BAR_ID)
-        yield StatusBar(id=STATUS_BAR_ID)
-        yield Footer(compact=True)
+        yield BottomBar(id=BOTTOM_BAR_ID)
 
     def on_mount(self) -> None:
         self.docker = self._injected_docker
@@ -499,6 +521,7 @@ class DockSurfApp(
         # Any connection failure is surfaced from SnapshotManager once that
         # first fetch comes back.
         self.setup_tables()
+        self._repaint_chrome()
         self.start_refresh()
         # Live: react to `docker events` so the tables stay current without `r`.
         self.start_event_listener()
@@ -550,9 +573,9 @@ class DockSurfApp(
             return
         table = self.query_one(f"#{entry.table_id}", DataTable)
         # Explicitly follow focus to the active tab's table (rather than
-        # relying on Textual's implicit initial-focus behavior) so the
-        # Footer's per-table BINDINGS scoping is deterministic.
-        if not self.query_one(f"#{SEARCH_BAR_ID}", Input).display:
+        # relying on Textual's implicit initial-focus behavior) so each table's
+        # BINDINGS scoping is deterministic — unless the user is typing a filter.
+        if not self.query_one(f"#{SEARCH_BAR_ID}", SearchBar).has_focus:
             table.focus()
         current = self._tables.rows.get(active, [])
         if not current:
@@ -593,6 +616,7 @@ class DockSurfApp(
         self._sync_top()
         self._sync_image_architecture()
         self._sync_container_detail()
+        self._repaint_bottom_bar()
 
     @on(TabbedContent.TabActivated)
     def clear_on_tab_switch(self) -> None:
@@ -600,6 +624,7 @@ class DockSurfApp(
         if self._tables.is_dirty(active):
             self._populate_tab(active)
         self._auto_select_first()
+        self._repaint_chrome()
         if self._persist_session:
             self._session.active_tab = active
             save_session(self._session)
@@ -611,15 +636,25 @@ class DockSurfApp(
         # class, and the mixins run with a plain `object` base at runtime.
         self._on_header_selected(event)
 
-    @on(Input.Changed, f"#{SEARCH_BAR_ID}")
-    def _on_search_input_changed(self, event: Input.Changed) -> None:
+    @on(SearchBar.Changed, f"#{SEARCH_BAR_ID}")
+    def _on_search_input_changed(self, event: SearchBar.Changed) -> None:
         # Same reason as _on_data_table_header_selected above — the real
         # logic lives on ResourceSearchController (search.py), a mixin.
         self.on_search_changed(event)
 
-    @on(Input.Submitted, f"#{SEARCH_BAR_ID}")
-    def _on_search_input_submitted(self, event: Input.Submitted) -> None:
-        self.on_search_escape(event)
+    @on(SearchBar.Submitted, f"#{SEARCH_BAR_ID}")
+    def _on_search_input_submitted(self, event: SearchBar.Submitted) -> None:
+        self.on_search_escape()
+
+    @on(events.DescendantFocus)
+    @on(events.DescendantBlur)
+    def _on_focus_moved(self) -> None:
+        # The bottom bar shows filter hints while the filter input has focus.
+        self._repaint_bottom_bar()
+
+    @on(SearchBar.Dismissed)
+    def _on_search_dismissed(self) -> None:
+        self.on_search_escape()
 
     @on(LogPane.ToggleExpand)
     def _on_log_pane_toggle_expand(self) -> None:
@@ -641,6 +676,7 @@ class DockSurfApp(
         """Rebuild the palette and repaint: the active table now, the others
         lazily when they next become active."""
         self._view.palette = palette_from_theme(theme)
+        self._repaint_chrome()
         if not self.is_running or not self.snapshot:
             return
         active = self.query_one(TabbedContent).active

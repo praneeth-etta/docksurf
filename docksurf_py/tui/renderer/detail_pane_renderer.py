@@ -14,14 +14,11 @@ from docksurf_py.core.models import ComposeProject
 from docksurf_py.core.render.markup import (
     format_health_log,
     health_markup,
-    project_status_color,
     project_status_markup,
-    status_color,
     status_markup,
 )
 from docksurf_py.core.render.topology import network_topology
 from docksurf_py.core.types import (
-    STATUS_GREEN,
     STATUS_RED,
     STATUS_YELLOW,
     SafeMarkup,
@@ -103,7 +100,6 @@ class DetailPaneRenderer(_Base):
             else "…",
             env_masked=not self._details.reveal_secrets,
             health_log=format_health_log(detail.health_log) if detail else None,
-            border_style=status_color(c),
         )
         pane.clear_topology()
 
@@ -118,11 +114,7 @@ class DetailPaneRenderer(_Base):
             "Working Dir": project.working_dir or "—",
             "Containers": services or "None",
         }
-        pane.update_details(
-            f"Project: {project.name}",
-            {"": details},
-            border_style=project_status_color(project),
-        )
+        pane.update_details(f"Project: {project.name}", {"": details})
         pane.clear_topology()
 
     def _show_image_details(self, pane: DetailPane, row: int) -> None:
@@ -133,13 +125,10 @@ class DetailPaneRenderer(_Base):
 
         if image.used_by:
             status = markup_green("In Use")
-            border_style = STATUS_GREEN
         elif image.is_dangling:
             status = markup_red("Dangling (safe to delete)")
-            border_style = STATUS_RED
         else:
             status = markup_yellow("Unused (not referenced by any container)")
-            border_style = STATUS_YELLOW
 
         # Fetched lazily on row-select and cached by
         # ImageActionHandler._sync_image_architecture; "…" until it resolves.
@@ -160,7 +149,6 @@ class DetailPaneRenderer(_Base):
         pane.update_details(
             f"Image: {image.repository}:{image.tag}",
             {"Identity": identity, "Details": info, "Usage": usage},
-            border_style=border_style,
         )
         pane.clear_topology()
 
@@ -187,9 +175,7 @@ class DetailPaneRenderer(_Base):
         if size is not None:
             usage["Size on disk"] = format_size(size)
         pane.update_details(
-            f"Volume: {volume.name}",
-            {"Identity": identity, "Usage": usage},
-            border_style=STATUS_GREEN if volume.used_by else STATUS_YELLOW,
+            f"Volume: {volume.name}", {"Identity": identity, "Usage": usage}
         )
         pane.clear_topology()
 

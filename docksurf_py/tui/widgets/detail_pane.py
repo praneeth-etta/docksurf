@@ -1,7 +1,6 @@
 """DetailPane — key-value table plus collapsible extras for the side panel."""
 
 from rich.markup import escape
-from rich.panel import Panel
 from rich.table import Table
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
@@ -30,9 +29,7 @@ class DetailPane(VerticalScroll):
     _health_collapsible: "Collapsible | None" = None
 
     def compose(self) -> ComposeResult:
-        self._panel = Static(
-            Panel("Select an item to view details.", border_style="dim")
-        )
+        self._panel = Static("Select an item to view details.", classes="muted")
         yield self._panel
         self._stats_panel = Static("")
         yield self._stats_panel
@@ -66,7 +63,6 @@ class DetailPane(VerticalScroll):
         env_text: str | None = None,
         env_masked: bool = True,
         health_log: str | None = None,
-        border_style: str = "blue",
     ) -> None:
         """Update the details panel and its optional collapsible sections.
 
@@ -91,9 +87,8 @@ class DetailPane(VerticalScroll):
                 )
                 table.add_row(f"[b]{key}[/b]", safe_value)
 
-        self._panel.update(
-            Panel(table, title=f"[b]{safe_title}[/b]", border_style=border_style)
-        )
+        self.border_title = safe_title
+        self._panel.update(table)
 
         if self._env_collapsible is not None:
             self._env_collapsible.remove()
@@ -122,7 +117,8 @@ class DetailPane(VerticalScroll):
             self.mount(self._health_collapsible)
 
     def clear_details(self) -> None:
-        self._panel.update(Panel("Select an item to view details.", border_style="dim"))
+        self.border_title = ""
+        self._panel.update("Select an item to view details.")
         self._stats_panel.update("")
         self._top_panel.update("")
         self._topology_panel.update("")

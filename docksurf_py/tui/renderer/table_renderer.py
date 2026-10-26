@@ -172,7 +172,8 @@ class TableRenderer(_Base):
         active = self.query_one(TabbedContent).active
         focus_key = self._focused_row_key(active)
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
-        self._apply_filter(search_bar.value if search_bar.display else "")
+        self._apply_filter(search_bar.value)
+        self._repaint_chrome()
         self._restore_selection(active, focus_key)
 
     def _rerender_containers(self) -> None:
@@ -234,7 +235,7 @@ class TableRenderer(_Base):
 
         Distinguishes three causes so the message actually helps: an active
         search with no matches, a disconnected daemon (reusing the same
-        classified `ConnectionState` the status bar shows), or genuinely zero
+        classified `ConnectionState` the bottom bar shows), or genuinely zero
         resources of that type.
         """
         table = self.query_one(f"#{entry.table_id}", DataTable)

@@ -1,10 +1,10 @@
 """DataTable subclasses carrying per-tab key bindings.
 
-Textual's `Footer` shows a widget's own `BINDINGS` only while that widget
-has focus, so declaring a tab's actions here (rather than only on
-`DockSurfApp.BINDINGS`) is what makes the footer show `Stop`/`History`/`Size`
-etc. only on the tab they apply to. The matching App-level entries stay
-`show=False` and exist purely so the `?` help screen and command palette
+A widget's own `BINDINGS` apply only while it has focus, so declaring a tab's
+actions here (rather than only on `DockSurfApp.BINDINGS`) scopes `Stop`/
+`History`/`Size` etc. to the tab they apply to. The bottom bar's per-row hints
+(`core.render.chrome.key_hints`) mirror these. The matching App-level entries
+stay `show=False` and exist purely so the `?` help screen and command palette
 (both of which only read `App.BINDINGS`) still surface every action.
 """
 

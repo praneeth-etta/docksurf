@@ -16,14 +16,12 @@ from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import (
     CONNECTION_BANNER_ID,
-    CONNECTION_INDICATOR_ID,
     DETAIL_PANE_ID,
     REFRESH_LOADING_ID,
     SEARCH_BAR_ID,
-    STATUS_BAR_ID,
 )
 from docksurf_py.tui.renderer.common import _Base
-from docksurf_py.tui.widgets import ConnectionIndicator, DetailPane, StatusBar
+from docksurf_py.tui.widgets import DetailPane
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +92,7 @@ class SnapshotManager(_Base):
         self._tables.apply_snapshot(snapshot, active)
 
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
-        filter_active = search_bar.display and bool(search_bar.value)
+        filter_active = bool(search_bar.value)
         if filter_active:
             # _apply_filter (below) populates the active tab itself — doing
             # it here too would repaint it twice.
@@ -102,19 +100,12 @@ class SnapshotManager(_Base):
         else:
             self._populate_tab(active)
 
-        status_bar = self.query_one(f"#{STATUS_BAR_ID}", StatusBar)
-        status_bar.update_stats(
-            snapshot.containers,
-            snapshot.images,
-            snapshot.volumes,
-            context=self.docker.connection.context,
-        )
-
         if filter_active:
             self._apply_filter(search_bar.value)
 
         # Restore selection last — after any filter re-populate — so it wins.
         self._restore_selection(active, focus_key)
+        self._repaint_chrome()
 
     def _populate_tab(self, tab_id: TabID) -> None:
         """(Re)populate a tab's table from the current snapshot and clear its dirty
@@ -131,6 +122,7 @@ class SnapshotManager(_Base):
         entry.populate(table, rows)
         self._update_empty_state(tab_id, entry, rows)
         self._tables.mark_clean(tab_id)
+        self._repaint_list_panel()
 
     def _focused_row_key(self, tab_id: TabID) -> tuple[str, str] | None:
         item = self._get_focused_resource(tab_id)
@@ -172,17 +164,17 @@ class SnapshotManager(_Base):
 
         No-ops unless `state.status` actually changed since the last call, so
         a poll loop retrying every couple seconds doesn't spam a toast on
-        every attempt. Feeds the StatusBar's connection segment either way
+        every attempt. Feeds the top and bottom bars' connection state either way
         the first time, then only a real transition after that.
         """
         change = self._refresh.connection_changed(state)
         if change is None:
             return
         connected = change.connected
-        status_bar = self.query_one(f"#{STATUS_BAR_ID}", StatusBar)
-        status_bar.set_connection_state(connected, "" if connected else state.message)
-        indicator = self.query_one(f"#{CONNECTION_INDICATOR_ID}", ConnectionIndicator)
-        indicator.set_connection_state(connected)
+        self._view.connection = "live" if connected else "offline"
+        self._view.connection_message = "" if connected else state.message
+        self._repaint_top_bar()
+        self._repaint_bottom_bar()
         banner = self.query_one(f"#{CONNECTION_BANNER_ID}", Static)
         if connected:
             banner.display = False

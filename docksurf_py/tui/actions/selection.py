@@ -49,6 +49,7 @@ class SelectionHandler(_Base):
             return
         now_marked = self._tables.toggle_mark(active, key)
         table.update_cell_at(Coordinate(row, 0), MARK_GLYPH if now_marked else "")
+        self._repaint_bottom_bar()
 
         # Advance the cursor — mark-and-move, k9s-style rapid selection.
         if row + 1 < table.row_count:

@@ -62,10 +62,10 @@ from docksurf_py.tui.app import (
     _tab_actions,
 )
 from docksurf_py.tui.ids import (
+    BOTTOM_BAR_ID,
     BTN_EXPAND_ID,
     CONFIRM_FORCE_CHECKBOX_ID,
     CONNECTION_BANNER_ID,
-    CONNECTION_INDICATOR_ID,
     DETAIL_PANE_ID,
     EMPTY_STATE_IDS,
     INSPECT_SEARCH_ID,
@@ -74,14 +74,14 @@ from docksurf_py.tui.ids import (
     LOG_PANE_ID,
     PULL_PROGRESS_VIEW_ID,
     SEARCH_BAR_ID,
-    STATUS_BAR_ID,
+    TOP_BAR_ID,
     TableID,
 )
 from docksurf_py.tui.themes import palette_from_theme
 from docksurf_py.tui.widgets import (
+    BottomBar,
     BuildProgressScreen,
     ConfirmDialog,
-    ConnectionIndicator,
     ContainerPickerScreen,
     DetailPane,
     HelpScreen,
@@ -93,7 +93,7 @@ from docksurf_py.tui.widgets import (
     PruneScreen,
     PullProgressScreen,
     SelectableRichLog,
-    StatusBar,
+    TopBar,
 )
 from tests.test_compose import make_container
 
@@ -431,6 +431,11 @@ async def wait_until(predicate, timeout: float = 1.0) -> None:
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(0.01)
+
+
+def _bar_text(app: DockSurfApp, bar_id: str, kind: type) -> str:
+    """The plain text a top/bottom bar is currently showing."""
+    return str(app.query_one(f"#{bar_id}", kind).content)
 
 
 def _non_selection_calls(calls: list[tuple]) -> list[tuple]:
@@ -2452,17 +2457,22 @@ class ReconnectTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             # The first stream_events() call errors out — mark_disconnected
-            # fires and the StatusBar should show the disconnected segment.
+            # fires and the bars should show the offline state.
             await wait_until(lambda: ("mark_disconnected", "daemon down") in svc.calls)
-            status_bar = app.query_one(f"#{STATUS_BAR_ID}", StatusBar)
-            await wait_until(lambda: bool(status_bar._conn_text))
-            self.assertIn("Docker daemon is not running", status_bar._conn_text)
+            await wait_until(lambda: app._view.connection == "offline")
+            self.assertIn("Docker daemon is not running", app._view.connection_message)
+            self.assertIn("offline", _bar_text(app, TOP_BAR_ID, TopBar))
+            self.assertIn(
+                "Docker daemon is not running",
+                _bar_text(app, BOTTOM_BAR_ID, BottomBar),
+            )
 
             # The 2s backoff then retries ensure_connected(), which our stub
             # flips back to connected — a refresh should follow automatically,
             # with no manual `r` press.
             await wait_until(lambda: svc.is_connected, timeout=3.0)
-            await wait_until(lambda: not status_bar._conn_text, timeout=3.0)
+            await wait_until(lambda: app._view.connection == "live", timeout=3.0)
+            self.assertEqual(app._view.connection_message, "")
 
 
 class _FakeHeaderSelected:
@@ -3266,24 +3276,20 @@ class EmptyStateTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             banner = app.query_one(f"#{CONNECTION_BANNER_ID}", Static)
-            indicator = app.query_one(
-                f"#{CONNECTION_INDICATOR_ID}", ConnectionIndicator
-            )
             self.assertFalse(banner.display)
 
             svc.mark_disconnected(RuntimeError("daemon down"))
             app.start_refresh()
             await wait_until(lambda: banner.display)
             self.assertIn("Docker daemon is not running", str(banner.content))
-            self.assertIn("Disconnected", str(indicator.content))
+            self.assertIn("offline", _bar_text(app, TOP_BAR_ID, TopBar))
 
             svc._connected = True
             svc.connection = _CONNECTED_STATE
             app.start_refresh()
             await wait_until(lambda: not banner.display)
-            # "Connected" is a substring of "Disconnected" too, so assert the
-            # negative to actually prove the flip back happened.
-            self.assertNotIn("Disconnected", str(indicator.content))
+            await wait_until(lambda: "live" in _bar_text(app, TOP_BAR_ID, TopBar))
+            self.assertNotIn("offline", _bar_text(app, TOP_BAR_ID, TopBar))
 
 
 class PartialFetchFailureTests(unittest.IsolatedAsyncioTestCase):
