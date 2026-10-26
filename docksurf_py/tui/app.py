@@ -17,6 +17,7 @@ from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
+from textual.theme import Theme
 from textual.widgets import (
     DataTable,
     Footer,
@@ -55,6 +56,7 @@ from docksurf_py.core.state.tables import (
     matches_network,
     matches_volume,
 )
+from docksurf_py.core.state.view import ViewState
 from docksurf_py.core.types import LogOptions, TabID
 from docksurf_py.tui.actions import (
     ClipboardHandler,
@@ -89,7 +91,12 @@ from docksurf_py.tui.renderer import (
     TableRenderer,
 )
 from docksurf_py.tui.search import ResourceSearchController
-from docksurf_py.tui.themes import CUSTOM_THEMES, DEFAULT_THEME_NAME, THEME_CYCLE_NAMES
+from docksurf_py.tui.themes import (
+    CUSTOM_THEMES,
+    DEFAULT_THEME_NAME,
+    THEME_CYCLE_NAMES,
+    palette_from_theme,
+)
 from docksurf_py.tui.widgets import (
     ConnectionIndicator,
     ContainerTable,
@@ -180,8 +187,8 @@ class AppContext(Protocol):
     `tui/search.py` and `tui/observability.py` give each mixin
     `self: AppContext` via `_Base = AppContext if TYPE_CHECKING else object`,
     so mypy checks method bodies against this instead. Never instantiated or
-    inherited at runtime. Per-concern app state lives in the four core state
-    objects (`_tables`, `_refresh`, `_details`, `_live`), not loose attributes.
+    inherited at runtime. Per-concern app state lives in the five core state
+    objects (`_tables`, `_refresh`, `_details`, `_live`, `_view`), not loose attributes.
     """
 
     snapshot: DockerSnapshot | None
@@ -194,6 +201,7 @@ class AppContext(Protocol):
     _refresh: RefreshCoordinator
     _details: DetailCache
     _live: LiveTargets
+    _view: ViewState
     is_running: bool  # really a textual.app.App property
 
     def start_refresh(self) -> None: ...
@@ -355,6 +363,7 @@ class DockSurfApp(
         self._refresh = RefreshCoordinator()
         self._details = DetailCache()
         self._live = LiveTargets()
+        self._view = ViewState()
         self._resource_registry = {
             TabID.CONTAINERS: ResourceEntry(
                 kind=ResourceKind(
@@ -477,6 +486,8 @@ class DockSurfApp(
             if self._session.theme in self.available_themes
             else DEFAULT_THEME_NAME
         )
+        self._view.palette = palette_from_theme(self.available_themes[self.theme])
+        self.theme_changed_signal.subscribe(self, self._on_theme_changed)
         if self._session.active_tab:
             try:
                 self.query_one(TabbedContent).active = TabID(self._session.active_tab)
@@ -625,6 +636,16 @@ class DockSurfApp(
             self.action_create_network()
         else:
             self.notify("Nothing to create on this tab", severity="information")
+
+    def _on_theme_changed(self, theme: Theme) -> None:
+        """Rebuild the palette and repaint: the active table now, the others
+        lazily when they next become active."""
+        self._view.palette = palette_from_theme(theme)
+        if not self.is_running or not self.snapshot:
+            return
+        active = self.query_one(TabbedContent).active
+        self._tables.dirty |= {tab for tab in TabID if tab != active}
+        self._rerender_active_table()
 
     def action_cycle_theme(self) -> None:
         """`M`: cycle through the curated DockSurf themes, plus the

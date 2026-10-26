@@ -84,6 +84,47 @@ class LoadConfigTests(unittest.TestCase):
             self.assertTrue(config.confirm_prune)
             self.assertEqual(config.default_log_tail, 500)
 
+    def test_ui_defaults(self) -> None:
+        config = Config()
+        self.assertFalse(config.row_stats)
+        self.assertEqual(config.row_stats_max, 20)
+        self.assertTrue(config.side_logs)
+
+    def test_ui_section_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "[ui]\nrow_stats = true\nrow_stats_max = 5\nside_logs = false\n"
+            )
+            config = load_config(path)
+            self.assertTrue(config.row_stats)
+            self.assertEqual(config.row_stats_max, 5)
+            self.assertFalse(config.side_logs)
+
+    def test_bad_ui_values_fall_back_to_defaults(self) -> None:
+        for body in (
+            'row_stats = "yes"',
+            "row_stats_max = 0",
+            "row_stats_max = -3",
+            "row_stats_max = true",
+            'row_stats_max = "ten"',
+            "side_logs = 1",
+        ):
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "config.toml"
+                path.write_text(f"[ui]\n{body}\n")
+                self.assertEqual(load_config(path), Config())
+
+    def test_scaffolded_template_parses_to_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "docksurf" / "config.toml"
+            import docksurf_py.core.config as config_mod
+
+            with patch.object(config_mod, "DEFAULT_CONFIG_PATH", path):
+                load_config()
+            self.assertIn("[ui]", path.read_text())
+            self.assertEqual(load_config(path), Config())
+
 
 if __name__ == "__main__":
     unittest.main()

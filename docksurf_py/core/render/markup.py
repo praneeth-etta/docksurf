@@ -4,7 +4,15 @@ from rich.markup import escape
 
 from docksurf_py.core.docker import format_relative_time
 from docksurf_py.core.models import ComposeProject, Container, HealthProbe, Network
+from docksurf_py.core.render.palette import Palette, fg
 from docksurf_py.core.render.topology import _network_members
+from docksurf_py.core.state.status import (
+    GLYPH,
+    ROLE,
+    RunState,
+    classify,
+    project_state_counts,
+)
 from docksurf_py.core.types import (
     STATUS_GREEN,
     STATUS_RED,
@@ -113,3 +121,54 @@ def network_containers_markup(
     running = sum(1 for m in members if m.running)
     color = STATUS_GREEN if running == len(members) else STATUS_YELLOW
     return SafeMarkup(f"[{color}]{len(members)} ({running} running)[/]")
+
+
+def state_glyph(c: Container, p: Palette) -> SafeMarkup:
+    """The container's state glyph (`●` `◐` `✕` `○`) in its palette colour."""
+    state = classify(c)
+    return fg(p, ROLE[state], GLYPH[state])
+
+
+def state_cell(c: Container, p: Palette) -> SafeMarkup:
+    """STATE column text: `running ✓`, `starting …`, `paused`, `exited 137`."""
+    state = classify(c)
+    if state is RunState.RUNNING:
+        label = "running ✓" if c.health == "healthy" else "running"
+    elif state is RunState.STARTING:
+        label = "restarting" if c.state == "restarting" else "starting …"
+    elif state is RunState.PAUSED:
+        label = "paused"
+    elif state is RunState.UNHEALTHY:
+        label = "unhealthy"
+    elif c.state == "exited":
+        label = f"exited {c.exit_code}"
+    else:
+        label = c.state or "unknown"  # created, dead
+    return fg(p, ROLE[state], label)
+
+
+def rollup_dots(
+    containers: list[Container],
+    p: Palette,
+    max_dots: int = 10,
+    with_count: bool = True,
+) -> SafeMarkup:
+    """One glyph per member (service-name order, `+N` past `max_dots`) followed
+    by `2/7 up`: success = all up, warning = some, muted = none, with a
+    trailing `N failed` in the error colour when any member failed.
+    `with_count=False` drops the text, for narrow (compact) columns."""
+    if not containers:
+        return SafeMarkup("")
+    members = sorted(containers, key=lambda c: (c.compose_service, c.name))
+    dots = "".join(state_glyph(c, p) for c in members[:max_dots])
+    extra = len(members) - max_dots
+    if extra > 0:
+        dots += fg(p, "muted", f"+{extra}")
+    if not with_count:
+        return SafeMarkup(dots)
+    up, _down, failed = project_state_counts(members)
+    role = "success" if up == len(members) else "warning" if up else "muted"
+    out = f"{dots} {fg(p, role, f'{up}/{len(members)} up')}"
+    if failed:
+        out += " " + fg(p, "error", f"{failed} failed")
+    return SafeMarkup(out)

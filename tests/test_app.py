@@ -39,6 +39,7 @@ from docksurf_py.core.models import (
     SystemDf,
     Volume,
 )
+from docksurf_py.core.render.palette import ANSI_PALETTE
 from docksurf_py.core.render.topology import (
     _network_members,
     _network_summary,
@@ -76,6 +77,7 @@ from docksurf_py.tui.ids import (
     STATUS_BAR_ID,
     TableID,
 )
+from docksurf_py.tui.themes import palette_from_theme
 from docksurf_py.tui.widgets import (
     BuildProgressScreen,
     ConfirmDialog,
@@ -1368,7 +1370,31 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc, session=SessionState(theme="not-a-theme"))
         async with app.run_test() as pilot:
             await pilot.pause()
-            self.assertEqual(app.theme, "docksurf-abyss")
+            self.assertEqual(app.theme, "docksurf-tide")
+
+    async def test_fresh_session_boots_with_tide_and_matching_palette(self) -> None:
+        svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
+        app = DockSurfApp(docker=svc, session=SessionState())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            self.assertEqual(app.theme, "docksurf-tide")
+            self.assertEqual(app._view.palette.primary, "#7aa2f7")
+
+    async def test_theme_change_rebuilds_palette(self) -> None:
+        svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
+        app = DockSurfApp(docker=svc)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            before = app._view.palette
+            app.theme = "docksurf-forest"
+            await pilot.pause()
+            self.assertNotEqual(app._view.palette, before)
+            self.assertEqual(
+                app._view.palette, palette_from_theme(app.available_themes[app.theme])
+            )
+            app.theme = "ansi-dark"
+            await pilot.pause()
+            self.assertIs(app._view.palette, ANSI_PALETTE)
 
     async def test_cycle_theme_key_cycles_and_persists(self) -> None:
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
@@ -1379,11 +1405,11 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
                 # Key-press tests need explicit focus on the container table —
                 # see TabNavigationTests/LogViewerTests._open_logs.
                 app.query_one(f"#{TableID.CONTAINERS}", DataTable).focus()
-                self.assertEqual(app.theme, "docksurf-abyss")
+                self.assertEqual(app.theme, "docksurf-tide")
                 await pilot.press("M")
                 await pilot.pause()
-                self.assertEqual(app.theme, "ansi-dark")
-                self.assertEqual(app._session.theme, "ansi-dark")
+                self.assertEqual(app.theme, "docksurf-nightcity")
+                self.assertEqual(app._session.theme, "docksurf-nightcity")
         save.assert_called()
 
 
