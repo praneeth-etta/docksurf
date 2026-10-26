@@ -676,9 +676,9 @@ class DockerClient:
     def inspect_resource(self, kind: str, ref: str) -> dict | None:
         """Full raw attrs for one resource — the `docker inspect` escape hatch.
 
-        `kind` matches `_row_key()`'s first element (container/image/volume/
+        `kind` matches `row_key()`'s first element (container/image/volume/
         network) so callers can pass a row key straight through — except an
-        image `ref`, which must be the plain image id, not `_row_key()`'s
+        image `ref`, which must be the plain image id, not `row_key()`'s
         `id|repo:tag` composite (see `actions/inspect.py`).
         """
         sdk = self._sdk

@@ -8,6 +8,7 @@ from textual.coordinate import Coordinate
 from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.state.ops import BulkJob, BulkResult, run_bulk
+from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base
 from docksurf_py.tui.ids import MARK_GLYPH
@@ -37,7 +38,7 @@ class SelectionHandler(_Base):
         item = self._get_focused_resource(active)
         if item is None:
             return
-        key = self._row_key(item)
+        key = row_key(item)
         if key is None:
             return
 

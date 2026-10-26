@@ -1,10 +1,11 @@
-"""Import-boundary guard: `docksurf_py.core` must never load Textual.
+"""Import-boundary guard: `docksurf_py.core` must never load Textual or reach
+up into `docksurf_py.tui`.
 
 Core logic stays unit-testable without a running app and approachable without
-Textual knowledge only while nothing in it imports `textual`, directly or
-transitively. Each check runs in a fresh interpreter, since this test session
-already has Textual loaded via the app tests. See local/UI_SEPARATION_PLAN.md
-Phase 0. Rich is allowed in core (decision D-2); only Textual is banned.
+Textual knowledge only while nothing in it imports `textual` or the UI layer,
+directly or transitively. Each check runs in a fresh interpreter, since this
+test session already has both loaded via the app tests. Rich is allowed in
+core; only Textual and `docksurf_py.tui` are banned.
 """
 
 import pkgutil
@@ -13,6 +14,8 @@ import sys
 import unittest
 
 import docksurf_py.core
+
+BANNED = ("textual", "docksurf_py.tui")
 
 
 def _core_modules() -> list[str]:
@@ -26,32 +29,39 @@ def _core_modules() -> list[str]:
     return modules
 
 
-def _loads_textual(module: str) -> bool:
+def _banned_imports(module: str) -> list[str]:
+    """Top-level banned packages that importing `module` loads."""
     code = (
         "import importlib, sys\n"
         f"importlib.import_module({module!r})\n"
-        "sys.exit(1 if any(m == 'textual' or m.startswith('textual.')"
-        " for m in sys.modules) else 0)\n"
+        f"banned = {BANNED!r}\n"
+        "print(','.join(b for b in banned"
+        " if any(m == b or m.startswith(b + '.') for m in sys.modules)))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
     )
-    if result.returncode not in (0, 1):
+    if result.returncode != 0:
         raise AssertionError(f"importing {module} failed:\n{result.stderr}")
-    return result.returncode == 1
+    out = result.stdout.strip()
+    return out.split(",") if out else []
 
 
 class CoreBoundaryTests(unittest.TestCase):
-    def test_core_modules_do_not_load_textual(self) -> None:
+    def test_core_modules_do_not_load_textual_or_tui(self) -> None:
         modules = _core_modules()
         # Guard against the walk silently finding nothing.
         self.assertIn("docksurf_py.core.docker.client", modules)
         for module in modules:
             with self.subTest(module=module):
-                self.assertFalse(
-                    _loads_textual(module), f"{module} transitively imports textual"
+                self.assertEqual(
+                    _banned_imports(module), [], f"{module} imports a banned layer"
                 )
 
-    def test_guard_detects_a_textual_import(self) -> None:
-        # Canary: a UI module must trip the check, or the guard is vacuous.
-        self.assertTrue(_loads_textual("docksurf_py.tui.themes"))
+    def test_guard_detects_textual_and_tui_imports(self) -> None:
+        # Canaries: UI modules must trip the check, or the guard is vacuous.
+        self.assertEqual(
+            _banned_imports("docksurf_py.tui.themes"), ["textual", "docksurf_py.tui"]
+        )
+        # `tui.ids` loads no Textual, so only the layer rule catches it.
+        self.assertEqual(_banned_imports("docksurf_py.tui.ids"), ["docksurf_py.tui"])

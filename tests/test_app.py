@@ -516,7 +516,7 @@ def _standalone_snapshot(running: bool, state: str | None = None) -> DockerSnaps
 
 class PauseKillActionTests(unittest.IsolatedAsyncioTestCase):
     async def _select_first_row(self, app: DockSurfApp) -> None:
-        await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
         table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
         table.move_cursor(row=0)
 
@@ -694,12 +694,12 @@ class ComposeGroupingTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(_compose_snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
 
-            rows = app._current[TabID.CONTAINERS]
+            rows = app._tables.rows[TabID.CONTAINERS]
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
 
-            # Row-index invariant: _current length matches the DataTable rows.
+            # Row-index invariant: `_tables.rows` length matches the DataTable rows.
             self.assertEqual(len(rows), table.row_count)
 
             # myapp (sorted) group header, then its two services, then standalone.
@@ -714,7 +714,7 @@ class ComposeGroupingTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(_compose_snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
 
             # Header row -> project.
@@ -732,32 +732,32 @@ class ComposeGroupingTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(_compose_snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
 
-            full_rows = len(app._current[TabID.CONTAINERS])
+            full_rows = len(app._tables.rows[TabID.CONTAINERS])
             table.move_cursor(row=0)
             app.action_toggle_group()
             await pilot.pause()
 
-            collapsed_rows = app._current[TabID.CONTAINERS]
+            collapsed_rows = app._tables.rows[TabID.CONTAINERS]
             # Header + standalone remain; the two services are hidden.
             self.assertEqual(len(collapsed_rows), full_rows - 2)
-            self.assertIn("myapp", app._collapsed_projects)
+            self.assertIn("myapp", app._tables.collapsed_projects)
 
     async def test_toggle_group_keeps_cursor_on_focused_row(self) -> None:
         """Regression: collapsing/expanding re-populates the table"""
         app = DockSurfApp(docker=MockDockerService(_compose_snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
 
             # Focus the standalone row (last), then re-render as a toggle does.
-            last = len(app._current[TabID.CONTAINERS]) - 1
+            last = len(app._tables.rows[TabID.CONTAINERS]) - 1
             table.move_cursor(row=last)
             focused = app._get_focused_resource(TabID.CONTAINERS)
-            app._collapsed_projects.add("myapp")
+            app._tables.collapsed_projects.add("myapp")
             app._rerender_containers()
             await pilot.pause()
 
@@ -774,7 +774,7 @@ class ComposeGroupingTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.move_cursor(row=0)
             self.assertTrue(app._focused_is_project_header())
@@ -811,7 +811,7 @@ class BulkContainerActionTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)
@@ -829,13 +829,13 @@ class BulkContainerActionTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)
             app.action_toggle_mark()
             await pilot.pause()
-            self.assertTrue(app._marked[TabID.CONTAINERS])
+            self.assertTrue(app._tables.marked[TabID.CONTAINERS])
 
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
@@ -886,7 +886,7 @@ class TabNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)
@@ -898,7 +898,7 @@ class TabNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)
@@ -915,13 +915,13 @@ class RebuildServiceTests(unittest.IsolatedAsyncioTestCase):
 
     `_compose_snapshot` groups the "myapp" project (header + sorted service
     rows `db`, `web`) then the standalone container; `_focus_web_service`
-    resolves the "web" row by scanning `_current` rather than hardcoding an
+    resolves the "web" row by scanning `_tables.rows` rather than hardcoding an
     index the group sort could shift.
     """
 
     async def _focus_web_service(self, app: DockSurfApp, pilot) -> None:
-        await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
-        rows = app._current[TabID.CONTAINERS]
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
+        rows = app._tables.rows[TabID.CONTAINERS]
         row = next(
             i
             for i, item in enumerate(rows)
@@ -1016,7 +1016,7 @@ class RebuildServiceTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)  # project header
@@ -1039,7 +1039,7 @@ class InspectActionTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.move_cursor(row=0)
 
@@ -1055,7 +1055,7 @@ class InspectActionTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(_compose_snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.move_cursor(row=0)  # header row for "myapp"
             self.assertTrue(app._focused_is_project_header())
@@ -1088,7 +1088,7 @@ class InspectActionTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.move_cursor(row=0)
 
@@ -1118,7 +1118,7 @@ class InspectActionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
             table = app.query_one(f"#{TableID.IMAGES}", DataTable)
             table.move_cursor(row=0)
 
@@ -1240,7 +1240,7 @@ class ConfirmToggleTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc, config=Config(confirm_delete=False))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -1255,7 +1255,7 @@ class ConfirmToggleTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc, config=Config(confirm_delete=False))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)
@@ -1272,7 +1272,7 @@ class ConfirmToggleTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc, config=Config(confirm_compose_down=False))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.focus()
             table.move_cursor(row=0)
@@ -1328,7 +1328,7 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
         )
         async with app.run_test() as pilot:
             await pilot.pause()
-            self.assertEqual(app._sort_state[TabID.CONTAINERS], ("Name", True))
+            self.assertEqual(app._tables.sort_state[TabID.CONTAINERS], ("Name", True))
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             labels = [str(col.label) for col in table.columns.values()]
             self.assertTrue(any("Name" in label and "▼" in label for label in labels))
@@ -1402,7 +1402,7 @@ class ExecCustomActionTests(unittest.IsolatedAsyncioTestCase):
     _WHICH_PATCH_TARGET = "docksurf_py.tui.actions.container.shutil.which"
 
     async def _select_first_row(self, app: DockSurfApp) -> None:
-        await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
         table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
         table.move_cursor(row=0)
 
@@ -1509,7 +1509,7 @@ class ExecContainerActionTests(unittest.IsolatedAsyncioTestCase):
     _WHICH_PATCH_TARGET = "docksurf_py.tui.actions.container.shutil.which"
 
     async def _select_first_row(self, app: DockSurfApp) -> None:
-        await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
         table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
         table.move_cursor(row=0)
 
@@ -1557,7 +1557,7 @@ class ExecContainerActionTests(unittest.IsolatedAsyncioTestCase):
 
 class CopyFilesActionTests(unittest.IsolatedAsyncioTestCase):
     async def _select_first_row(self, app: DockSurfApp) -> None:
-        await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
         table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
         table.move_cursor(row=0)
 
@@ -1640,7 +1640,7 @@ class CopyFilesActionTests(unittest.IsolatedAsyncioTestCase):
 
 class LogViewerTests(unittest.IsolatedAsyncioTestCase):
     async def _open_logs(self, app: DockSurfApp, pilot) -> LogPane:
-        await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
         # Focus the container table and open logs via the real keybinding, so
         # the test exercises binding routing (keys resolve through
         # ContainerTable.BINDINGS while the table keeps focus), not just the
@@ -1651,7 +1651,7 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
         await pilot.press("l")
         log_pane = app.query_one(f"#{LOG_PANE_ID}", LogPane)
         # Wait for the daemon stream thread to marshal all lines into the buffer.
-        await wait_until(lambda: len(log_pane._line_buffer) == 3)
+        await wait_until(lambda: len(log_pane._buffer.lines) == 3)
         return log_pane
 
     async def test_open_logs_streams_lines_into_buffer(self) -> None:
@@ -1661,9 +1661,9 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             log_pane = await self._open_logs(app, pilot)
             self.assertTrue(log_pane.display)
-            texts = [line.text for line in log_pane._line_buffer]
+            texts = [line.text for line in log_pane._buffer.lines]
             self.assertEqual(texts, ["starting up", "request handled", "boom"])
-            self.assertEqual(log_pane._line_buffer[2].stream, "stderr")
+            self.assertEqual(log_pane._buffer.lines[2].stream, "stderr")
 
     async def test_header_hints_lowercase_l_to_close(self) -> None:
         """Regression (BF-8): the footer said "L to close" while the actual
@@ -1685,9 +1685,9 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             log_pane = await self._open_logs(app, pilot)
 
-            self.assertFalse(log_pane._show_timestamps)
+            self.assertFalse(log_pane._buffer.show_timestamps)
             await pilot.press("T")
-            self.assertTrue(log_pane._show_timestamps)
+            self.assertTrue(log_pane._buffer.show_timestamps)
 
             self.assertFalse(log_pane._wrap)
             await pilot.press("W")
@@ -1702,18 +1702,18 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
             log_pane = await self._open_logs(app, pilot)
 
             # Drive the filter directly (the "/" key needs the pane focused).
-            log_pane._filter = "handled"
+            log_pane._buffer.filter = "handled"
             log_pane._render_to_view()
-            self.assertEqual(log_pane._match_count, 1)
-            self.assertEqual(log_pane._match_cursor, -1)
+            self.assertEqual(log_pane._buffer.match_count, 1)
+            self.assertEqual(log_pane._buffer.match_cursor, -1)
 
             app.action_next_match()
-            self.assertEqual(log_pane._match_cursor, 0)
+            self.assertEqual(log_pane._buffer.match_cursor, 0)
             # Wraps around a single match.
             app.action_next_match()
-            self.assertEqual(log_pane._match_cursor, 0)
+            self.assertEqual(log_pane._buffer.match_cursor, 0)
             app.action_prev_match()
-            self.assertEqual(log_pane._match_cursor, 0)
+            self.assertEqual(log_pane._buffer.match_cursor, 0)
 
     async def test_export_writes_file(self) -> None:
         snapshot = _standalone_snapshot(running=True)
@@ -1801,7 +1801,7 @@ class ImageActionTests(unittest.IsolatedAsyncioTestCase):
     async def _on_images(self, app: DockSurfApp, pilot) -> None:
         app.query_one(TabbedContent).active = TabID.IMAGES
         await pilot.pause()
-        await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
         app.query_one(f"#{TableID.IMAGES}", DataTable).move_cursor(row=0)
 
     async def test_pull_prompts_streams_and_pulls(self) -> None:
@@ -1923,7 +1923,7 @@ class ImageActionTests(unittest.IsolatedAsyncioTestCase):
             app.action_mark_all_dangling()
             await pilot.pause()
             self.assertEqual(
-                app._marked[TabID.IMAGES],
+                app._tables.marked[TabID.IMAGES],
                 {
                     ("image", "sha256:d1|<none>:<none>"),
                     ("image", "sha256:d2|<none>:<none>"),
@@ -1954,14 +1954,14 @@ class MultiTagImageTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
             table = app.query_one(f"#{TableID.IMAGES}", DataTable)
             table.focus()
             table.move_cursor(row=0)
 
             app.action_toggle_mark()
             await pilot.pause()
-            self.assertEqual(len(app._marked[TabID.IMAGES]), 1)
+            self.assertEqual(len(app._tables.marked[TabID.IMAGES]), 1)
 
     async def test_delete_removes_by_name_tag_not_shared_id(self) -> None:
         """Deleting one tag row must untag by `repo:tag`, not remove by the
@@ -1972,7 +1972,7 @@ class MultiTagImageTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
             table = app.query_one(f"#{TableID.IMAGES}", DataTable)
             table.move_cursor(row=0)
 
@@ -1994,7 +1994,7 @@ class MultiTagImageTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
             app.query_one(f"#{TableID.IMAGES}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -2045,18 +2045,18 @@ class VolumeActionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             await self._on_volumes(app, pilot)
-            await wait_until(lambda: bool(app._current.get(TabID.VOLUMES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.VOLUMES)))
             app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=0)
             app.action_volume_size()
             await wait_until(lambda: ("volume_sizes",) in svc.calls)
-            await wait_until(lambda: app._volume_sizes == {"vol1": 4096})
+            await wait_until(lambda: app._details.volume_sizes == {"vol1": 4096})
 
 
 class NetworkActionTests(unittest.IsolatedAsyncioTestCase):
     async def _on_networks(self, app: DockSurfApp, pilot) -> None:
         app.query_one(TabbedContent).active = TabID.NETWORKS
         await pilot.pause()
-        await wait_until(lambda: bool(app._current.get(TabID.NETWORKS)))
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.NETWORKS)))
         app.query_one(f"#{TableID.NETWORKS}", DataTable).move_cursor(row=0)
 
     async def test_create_network_prompts_and_creates(self) -> None:
@@ -2343,7 +2343,7 @@ class ContainerTopologyPaneTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
             await pilot.pause()
             pane = app.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
@@ -2469,12 +2469,12 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
             # x=5 lands past the 2-wide mark column, inside "Repository".
             await pilot.click(f"#{TableID.IMAGES}", offset=(5, 0))
             await pilot.pause()
             self.assertEqual(
-                [i.repository for i in app._current[TabID.IMAGES]], ["a", "c"]
+                [i.repository for i in app._tables.rows[TabID.IMAGES]], ["a", "c"]
             )
 
     async def test_sort_images_by_size_toggles_direction(self) -> None:
@@ -2493,14 +2493,14 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
 
             table = app.query_one(f"#{TableID.IMAGES}", DataTable)
             # Column 0 is the mark glyph; "Size" is entry.columns[2] -> index 3.
             app._on_header_selected(_FakeHeaderSelected(table, column_index=3))
             await pilot.pause()
             self.assertEqual(
-                [i.size_bytes for i in app._current[TabID.IMAGES]], [100, 200, 300]
+                [i.size_bytes for i in app._tables.rows[TabID.IMAGES]], [100, 200, 300]
             )
             labels = [str(col.label) for col in table.ordered_columns]
             self.assertIn("Size ▲", labels)
@@ -2508,7 +2508,7 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
             app._on_header_selected(_FakeHeaderSelected(table, column_index=3))
             await pilot.pause()
             self.assertEqual(
-                [i.size_bytes for i in app._current[TabID.IMAGES]], [300, 200, 100]
+                [i.size_bytes for i in app._tables.rows[TabID.IMAGES]], [300, 200, 100]
             )
             labels = [str(col.label) for col in table.ordered_columns]
             self.assertIn("Size ▼", labels)
@@ -2524,20 +2524,22 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
 
             table = app.query_one(f"#{TableID.IMAGES}", DataTable)
             # "Repository" is entry.columns[0] -> column index 1.
             app._on_header_selected(_FakeHeaderSelected(table, column_index=1))
             await pilot.pause()
             self.assertEqual(
-                [i.repository for i in app._current[TabID.IMAGES]], ["a", "z"]
+                [i.repository for i in app._tables.rows[TabID.IMAGES]], ["a", "z"]
             )
 
             app.start_refresh()
             await pilot.pause()
             await wait_until(
-                lambda: [i.repository for i in app._current[TabID.IMAGES]] == ["a", "z"]
+                lambda: (
+                    [i.repository for i in app._tables.rows[TabID.IMAGES]] == ["a", "z"]
+                )
             )
 
     async def test_sort_containers_preserves_compose_grouping(self) -> None:
@@ -2554,14 +2556,14 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
 
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             # "Name" is entry.columns[0] -> column index 1.
             app._on_header_selected(_FakeHeaderSelected(table, column_index=1))
             await pilot.pause()
 
-            rows = app._current[TabID.CONTAINERS]
+            rows = app._tables.rows[TabID.CONTAINERS]
             self.assertIsInstance(rows[0], ComposeProject)
             self.assertEqual(rows[0].name, "myapp")
             service_names = [c.name for c in rows[1:3]]
@@ -2578,12 +2580,12 @@ class LazyTabRenderTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: state["snapshot"]))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: TabID.IMAGES in app._dirty_tabs)
+            await wait_until(lambda: TabID.IMAGES in app._tables.dirty)
 
             # Containers tab is active by default — Images was never populated.
             images_table = app.query_one(f"#{TableID.IMAGES}", DataTable)
             self.assertEqual(images_table.row_count, 0)
-            self.assertEqual(app._current[TabID.IMAGES], [])
+            self.assertEqual(app._tables.rows[TabID.IMAGES], [])
 
             # A refresh with new data lands while Images stays inactive.
             state["snapshot"] = DockerSnapshot(
@@ -2593,18 +2595,19 @@ class LazyTabRenderTests(unittest.IsolatedAsyncioTestCase):
                 [],
             )
             app.start_refresh()
-            await wait_until(lambda: not app._refresh_in_progress)
+            await wait_until(lambda: not app._refresh.in_progress)
             await pilot.pause()
-            self.assertIn(TabID.IMAGES, app._dirty_tabs)
+            self.assertIn(TabID.IMAGES, app._tables.dirty)
             self.assertEqual(images_table.row_count, 0)
 
             # Switching to it catches it up with the latest snapshot.
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: TabID.IMAGES not in app._dirty_tabs)
+            await wait_until(lambda: TabID.IMAGES not in app._tables.dirty)
             self.assertEqual(images_table.row_count, 2)
             self.assertEqual(
-                [i.repository for i in app._current[TabID.IMAGES]], ["alpine", "redis"]
+                [i.repository for i in app._tables.rows[TabID.IMAGES]],
+                ["alpine", "redis"],
             )
 
     async def test_returning_to_a_dirty_tab_does_not_lose_the_active_tabs_repopulate(
@@ -2621,13 +2624,15 @@ class LazyTabRenderTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: state["snapshot"]))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
-            self.assertEqual(len(app._current[TabID.CONTAINERS]), 1)
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
+            self.assertEqual(len(app._tables.rows[TabID.CONTAINERS]), 1)
 
             state["snapshot"] = DockerSnapshot(containers_v2, [], [], [])
             app.start_refresh()
-            await wait_until(lambda: len(app._current.get(TabID.CONTAINERS, [])) == 2)
-            self.assertNotIn(TabID.CONTAINERS, app._dirty_tabs)
+            await wait_until(
+                lambda: len(app._tables.rows.get(TabID.CONTAINERS, [])) == 2
+            )
+            self.assertNotIn(TabID.CONTAINERS, app._tables.dirty)
 
 
 class LiveSearchTests(unittest.IsolatedAsyncioTestCase):
@@ -2646,7 +2651,7 @@ class LiveSearchTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
 
             app.action_open_search()
             await pilot.pause()
@@ -2668,7 +2673,7 @@ class LiveSearchTests(unittest.IsolatedAsyncioTestCase):
                     )
                 )
             self.assertEqual(
-                [i.repository for i in app._current[TabID.IMAGES]], ["redis"]
+                [i.repository for i in app._tables.rows[TabID.IMAGES]], ["redis"]
             )
 
     async def test_search_filter_is_debounced_not_applied_per_keystroke(self) -> None:
@@ -2688,7 +2693,7 @@ class LiveSearchTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.IMAGES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.IMAGES)))
 
             app.action_open_search()
             await pilot.pause()
@@ -2761,7 +2766,7 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -2777,7 +2782,7 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -2793,7 +2798,7 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -2813,7 +2818,7 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.VOLUMES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.VOLUMES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.VOLUMES)))
             app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=0)
 
             with patch.object(app, "notify") as notify:
@@ -2840,7 +2845,7 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.NETWORKS
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.NETWORKS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.NETWORKS)))
             app.query_one(f"#{TableID.NETWORKS}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -2863,7 +2868,7 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.NETWORKS
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.NETWORKS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.NETWORKS)))
             app.query_one(f"#{TableID.NETWORKS}", DataTable).move_cursor(row=0)
 
             app.action_delete()
@@ -3073,7 +3078,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.VOLUMES
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.VOLUMES)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.VOLUMES)))
             app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=0)
 
             app.action_yank()
@@ -3091,7 +3096,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             app.action_yank()
@@ -3121,7 +3126,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             with patch(
@@ -3140,7 +3145,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             with patch(
@@ -3170,7 +3175,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             app.action_open_port()
@@ -3185,7 +3190,7 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
 
             with patch.object(app, "notify") as notify:
@@ -3266,7 +3271,7 @@ class PartialFetchFailureTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
 
             svc.last_fetch_errors = ["networks"]
             with patch.object(app, "notify") as notify:
@@ -3278,7 +3283,7 @@ class PartialFetchFailureTests(unittest.IsolatedAsyncioTestCase):
 
             # A networks-only failure must not blank the tabs that fetched
             # fine — containers should still show its fresh data.
-            self.assertEqual(len(app._current[TabID.CONTAINERS]), 1)
+            self.assertEqual(len(app._tables.rows[TabID.CONTAINERS]), 1)
 
     async def test_no_notification_on_clean_fetch(self) -> None:
         snapshot = DockerSnapshot([make_container("c1")], [], [], [])
@@ -3286,11 +3291,11 @@ class PartialFetchFailureTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
 
             with patch.object(app, "notify") as notify:
                 app.start_refresh()
-                await wait_until(lambda: not app._refresh_in_progress)
+                await wait_until(lambda: not app._refresh.in_progress)
                 await pilot.pause()
                 notify.assert_not_called()
 
@@ -3322,7 +3327,7 @@ class SecretMaskingTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: bool(app._current.get(TabID.CONTAINERS)))
+            await wait_until(lambda: bool(app._tables.rows.get(TabID.CONTAINERS)))
             app.query_one(f"#{TableID.CONTAINERS}", DataTable).move_cursor(row=0)
             await pilot.pause()
 

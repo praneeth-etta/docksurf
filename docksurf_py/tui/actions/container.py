@@ -30,6 +30,7 @@ from docksurf_py.core.state.ops import (
     pause_verb,
     select_exec_shell,
 )
+from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import LogOptions, TabID
 from docksurf_py.tui.actions.common import _PROJECT_HINT, _Base
 from docksurf_py.tui.ids import DETAIL_PANE_ID, LOG_PANE_ID
@@ -228,7 +229,7 @@ class ContainerActionHandler(_Base):
 
         jobs: list[BulkJob] = []
         for c in self._marked_items(TabID.CONTAINERS):
-            key = self._row_key(c)
+            key = row_key(c)
             if include(c) and key is not None:
                 jobs.append((key, c.name, bound(c.id)))
 

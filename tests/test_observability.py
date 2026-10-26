@@ -17,6 +17,7 @@ from docksurf_py.core.models import (
     SystemDf,
 )
 from docksurf_py.core.render.observability import render_df, render_stats, render_top
+from docksurf_py.core.state.refresh import is_noise_event
 from docksurf_py.tui.app import DockSurfApp
 from docksurf_py.tui.widgets import SystemDfScreen
 from tests.test_app import EMPTY_SNAPSHOT, MockDockerService, wait_until
@@ -172,23 +173,18 @@ class EventNoiseFilterTests(unittest.TestCase):
     """The noise filter must match the action *prefix* (Docker appends the
     healthcheck command, e.g. 'exec_create: /bin/sh -c echo ok')."""
 
-    def setUp(self) -> None:
-        from docksurf_py.tui.renderer import SnapshotManager
-
-        self.mgr = SnapshotManager()
-
     def test_exec_events_with_command_suffix_are_noise(self) -> None:
-        self.assertTrue(self.mgr._is_noise_event("exec_create: /bin/sh -c echo ok"))
-        self.assertTrue(self.mgr._is_noise_event("exec_start: /bin/sh -c echo ok"))
-        self.assertTrue(self.mgr._is_noise_event("exec_die"))
+        self.assertTrue(is_noise_event("exec_create: /bin/sh -c echo ok"))
+        self.assertTrue(is_noise_event("exec_start: /bin/sh -c echo ok"))
+        self.assertTrue(is_noise_event("exec_die"))
 
     def test_periodic_health_status_is_noise(self) -> None:
-        self.assertTrue(self.mgr._is_noise_event("health_status: healthy"))
-        self.assertTrue(self.mgr._is_noise_event("health_status: unhealthy"))
+        self.assertTrue(is_noise_event("health_status: healthy"))
+        self.assertTrue(is_noise_event("health_status: unhealthy"))
 
     def test_real_state_changes_are_not_noise(self) -> None:
         for action in ("start", "die", "stop", "create", "destroy", "pull"):
-            self.assertFalse(self.mgr._is_noise_event(action), action)
+            self.assertFalse(is_noise_event(action), action)
 
 
 class CreateSdkClientContextTests(unittest.TestCase):
@@ -310,8 +306,8 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await pilot.pause()
-            await wait_until(lambda: app._stats_target == "web", timeout=2.0)
-            self.assertEqual(app._stats_target, "web")
+            await wait_until(lambda: app._live.stats_target == "web", timeout=2.0)
+            self.assertEqual(app._live.stats_target, "web")
 
     async def test_stopped_container_has_no_stats_target(self) -> None:
         snap = DockerSnapshot([make_container("web", running=False)], [], [], [])
@@ -320,7 +316,7 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.pause()
-            self.assertIsNone(app._stats_target)
+            self.assertIsNone(app._live.stats_target)
 
     async def test_refresh_preserves_selection(self) -> None:
         from textual.widgets import DataTable
@@ -348,7 +344,8 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             await wait_until(
-                lambda: len(app._current.get(TabID.CONTAINERS, [])) == 3, timeout=2.0
+                lambda: len(app._tables.rows.get(TabID.CONTAINERS, [])) == 3,
+                timeout=2.0,
             )
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.move_cursor(row=1)
@@ -420,15 +417,15 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
             await wait_until(lambda: app._get_focused_container() is not None)
 
             app.action_container_top()
-            # `_top_target` is set synchronously (before the threaded fetch
+            # `_live.top_target` is set synchronously (before the threaded fetch
             # even starts) — wait on the actual fetch call, not the target.
             await wait_until(lambda: ("container_top", "web") in svc.calls, timeout=2.0)
-            self.assertEqual(app._top_target, "web")
+            self.assertEqual(app._live.top_target, "web")
 
             # Pressing `t` again on the same container toggles it off.
             app.action_container_top()
             await pilot.pause()
-            self.assertIsNone(app._top_target)
+            self.assertIsNone(app._live.top_target)
 
     async def test_container_top_guarded_when_not_running(self) -> None:
         snap = DockerSnapshot([make_container("web", running=False)], [], [], [])
@@ -439,7 +436,7 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
 
             app.action_container_top()
             await pilot.pause()
-            self.assertIsNone(app._top_target)
+            self.assertIsNone(app._live.top_target)
 
     async def test_selecting_different_container_clears_top(self) -> None:
         from textual.widgets import DataTable
@@ -464,18 +461,19 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.pause()
             await wait_until(
-                lambda: len(app._current.get(TabID.CONTAINERS, [])) == 2, timeout=2.0
+                lambda: len(app._tables.rows.get(TabID.CONTAINERS, [])) == 2,
+                timeout=2.0,
             )
             table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
             table.move_cursor(row=0)
             await pilot.pause()
 
             app.action_container_top()
-            await wait_until(lambda: app._top_target == "web", timeout=2.0)
+            await wait_until(lambda: app._live.top_target == "web", timeout=2.0)
 
             table.move_cursor(row=1)
             await pilot.pause()
-            self.assertIsNone(app._top_target)
+            self.assertIsNone(app._live.top_target)
 
 
 if __name__ == "__main__":

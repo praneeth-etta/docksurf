@@ -93,7 +93,7 @@ def _app_with_events() -> tuple[
 
 
 async def _idle(app: DockSurfApp, pilot) -> None:
-    await wait_until(lambda: not app._refresh_in_progress, timeout=3.0)
+    await wait_until(lambda: not app._refresh.in_progress, timeout=3.0)
     await pilot.pause()
 
 
@@ -147,7 +147,7 @@ class EventDrivenRefreshTests(unittest.IsolatedAsyncioTestCase):
             fetch.hold()
             stream.push("start")
             await wait_until(lambda: fetch.count == 2, timeout=3.0)
-            self.assertTrue(app._refresh_in_progress)
+            self.assertTrue(app._refresh.in_progress)
 
             # Two separate debounced bursts land while the fetch is held.
             stream.push("die")

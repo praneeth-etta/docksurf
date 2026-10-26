@@ -5,9 +5,9 @@ import unittest
 
 from docksurf_py.core.docker import LogStream, _split_timestamp, _strip_ansi
 from docksurf_py.core.render.logs import render_log_line
-from docksurf_py.core.state.logs import buffer_to_text
+from docksurf_py.core.state.logs import LOG_BUFFER_MAXLEN, buffer_to_text
 from docksurf_py.core.types import LogLine, LogOptions
-from docksurf_py.tui.widgets.log_pane import _LOG_BUFFER_MAXLEN, LogPane
+from docksurf_py.tui.widgets.log_pane import LogPane
 
 
 class FakeContainer:
@@ -159,24 +159,24 @@ class BufferToTextTests(unittest.TestCase):
 class LogBufferBoundTests(unittest.TestCase):
     def test_buffer_drops_oldest_lines_past_maxlen(self) -> None:
         pane = LogPane()
-        total = _LOG_BUFFER_MAXLEN + 100
+        total = LOG_BUFFER_MAXLEN + 100
         for i in range(total):
-            pane._store_line(LogLine(text=f"line-{i}"))
+            pane._buffer.lines.append(LogLine(text=f"line-{i}"))
 
-        self.assertEqual(len(pane._line_buffer), _LOG_BUFFER_MAXLEN)
+        self.assertEqual(len(pane._buffer.lines), LOG_BUFFER_MAXLEN)
         # The oldest 100 lines (0..99) were dropped; the buffer now starts
         # right where they left off.
-        self.assertEqual(pane._line_buffer[0].text, "line-100")
-        self.assertEqual(pane._line_buffer[-1].text, f"line-{total - 1}")
+        self.assertEqual(pane._buffer.lines[0].text, "line-100")
+        self.assertEqual(pane._buffer.lines[-1].text, f"line-{total - 1}")
 
     def test_clear_log_resets_but_keeps_the_bound(self) -> None:
         pane = LogPane()
         for i in range(10):
-            pane._store_line(LogLine(text=f"line-{i}"))
-        pane._line_buffer.clear()
+            pane._buffer.lines.append(LogLine(text=f"line-{i}"))
+        pane._buffer.lines.clear()
 
-        self.assertEqual(len(pane._line_buffer), 0)
-        self.assertEqual(pane._line_buffer.maxlen, _LOG_BUFFER_MAXLEN)
+        self.assertEqual(len(pane._buffer.lines), 0)
+        self.assertEqual(pane._buffer.lines.maxlen, LOG_BUFFER_MAXLEN)
 
 
 if __name__ == "__main__":

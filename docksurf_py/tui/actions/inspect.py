@@ -7,6 +7,7 @@ from textual import work
 from textual.widgets import TabbedContent
 
 from docksurf_py.core.models import ComposeProject, Image
+from docksurf_py.core.state.tables import row_key
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.widgets import InspectScreen
 
@@ -27,7 +28,7 @@ class InspectHandler(_Base):
                 severity="warning",
             )
             return
-        key = self._row_key(item)
+        key = row_key(item)
         if key is None:
             self.notify("Nothing selected to inspect", severity="warning")
             return

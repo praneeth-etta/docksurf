@@ -11,7 +11,7 @@ from docksurf_py.core.connection import ConnectionState
 from docksurf_py.core.models import (
     DockerSnapshot,
 )
-from docksurf_py.core.state.refresh import EventWatcher, is_noise_event
+from docksurf_py.core.state.refresh import EventWatcher
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import (
@@ -35,15 +35,6 @@ class SnapshotManager(_Base):
     # created by `DockSurfApp.__init__`; this mixin owns the threads/timers.
     _event_watcher: EventWatcher | None = None
     _refresh_debounce: Timer | None = None
-
-    _is_noise_event = staticmethod(is_noise_event)
-
-    # Temporary read-through alias onto `self._refresh`, kept so existing tests
-    # that inspect it keep working unchanged while the UI separation is in
-    # progress (local/UI_SEPARATION_PLAN.md, Phase 4 removes it).
-    @property
-    def _refresh_in_progress(self) -> bool:
-        return self._refresh.in_progress
 
     def start_refresh(self) -> None:
         if not self._refresh.begin():
@@ -141,12 +132,9 @@ class SnapshotManager(_Base):
         self._update_empty_state(tab_id, entry, rows)
         self._tables.mark_clean(tab_id)
 
-    # Stable row identity; lives in core so it's testable without the app.
-    _row_key = staticmethod(row_key)
-
     def _focused_row_key(self, tab_id: TabID) -> tuple[str, str] | None:
         item = self._get_focused_resource(tab_id)
-        return self._row_key(item) if item is not None else None
+        return row_key(item) if item is not None else None
 
     def _restore_selection(
         self, tab_id: TabID, focus_key: tuple[str, str] | None

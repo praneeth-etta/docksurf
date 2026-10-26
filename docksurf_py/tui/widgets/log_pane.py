@@ -1,7 +1,6 @@
 """LogPane — inline log viewer, plus LogOptionsScreen for tail/since picking."""
 
 import threading
-from collections import deque
 from typing import Callable, Iterator, Protocol
 
 from rich.cells import cell_len
@@ -18,7 +17,7 @@ from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, RichLog, Select
 
-from docksurf_py.core.state.logs import LOG_BUFFER_MAXLEN, LogBuffer
+from docksurf_py.core.state.logs import LogBuffer
 from docksurf_py.core.types import LogLine, LogOptions
 from docksurf_py.tui.ids import (
     BTN_EXPAND_ID,
@@ -31,9 +30,6 @@ from docksurf_py.tui.ids import (
     LOG_PANE_TOOLBAR_ID,
     LOG_PANE_VIEW_ID,
 )
-
-# Buffer bound lives with the buffer in core; re-exported for existing tests.
-_LOG_BUFFER_MAXLEN = LOG_BUFFER_MAXLEN
 
 # How often the UI drains queued log lines. Batching avoids per-line
 # cross-thread dispatch under heavy log traffic, keeping the UI responsive at
@@ -172,34 +168,6 @@ class LogPane(Widget):
         self._options = default_options or LogOptions()
         self._wrap = False
 
-    # Temporary aliases onto `self._buffer`, kept so existing tests that
-    # inspect (and set `_filter` on) the pane keep working unchanged while the
-    # UI separation is in progress (local/UI_SEPARATION_PLAN.md, Phase 4
-    # removes them).
-    @property
-    def _line_buffer(self) -> deque[LogLine]:
-        return self._buffer.lines
-
-    @property
-    def _filter(self) -> str:
-        return self._buffer.filter
-
-    @_filter.setter
-    def _filter(self, value: str) -> None:
-        self._buffer.filter = value
-
-    @property
-    def _show_timestamps(self) -> bool:
-        return self._buffer.show_timestamps
-
-    @property
-    def _match_count(self) -> int:
-        return self._buffer.match_count
-
-    @property
-    def _match_cursor(self) -> int:
-        return self._buffer.match_cursor
-
     def compose(self) -> ComposeResult:
         with Horizontal(id=LOG_PANE_TOOLBAR_ID):
             yield Label("", id=LOG_PANE_HEADER_ID)
@@ -324,9 +292,6 @@ class LogPane(Widget):
         for markup in self._buffer.render_all():
             log_view.write(markup)
         self._update_header()
-
-    def _store_line(self, line: LogLine) -> None:
-        self._buffer.lines.append(line)
 
     def _ingest_batch(self, batch: list[LogLine]) -> None:
         """Apply one drained batch: store every line, render only if not

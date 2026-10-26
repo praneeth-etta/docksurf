@@ -206,7 +206,7 @@ async def _open(app: DockSurfApp, pilot, tab: TabID) -> DataTable:
     is re-applied until it sticks.
     """
     await wait_until(
-        lambda: app.snapshot is not None and not app._refresh_in_progress,
+        lambda: app.snapshot is not None and not app._refresh.in_progress,
         timeout=2.0,
     )
     await pilot.pause()
@@ -228,7 +228,7 @@ async def _open(app: DockSurfApp, pilot, tab: TabID) -> DataTable:
 async def _refresh(app: DockSurfApp, pilot) -> None:
     app.start_refresh()
     await pilot.pause()
-    await wait_until(lambda: not app._refresh_in_progress, timeout=2.0)
+    await wait_until(lambda: not app._refresh.in_progress, timeout=2.0)
     await pilot.pause()
 
 

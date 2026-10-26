@@ -9,6 +9,7 @@ from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.docker import format_size
 from docksurf_py.core.models import CommandResult, Image, ImageLayer
+from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.ids import DETAIL_PANE_ID
@@ -275,7 +276,7 @@ class ImageActionHandler(_Base):
         if not dangling:
             self.notify("No dangling images")
             return
-        keys = [key for img in dangling if (key := self._row_key(img)) is not None]
+        keys = [key for img in dangling if (key := row_key(img)) is not None]
         self._tables.mark(TabID.IMAGES, keys)
         self._rerender_active_table()
         self.notify(f"Marked {len(dangling)} dangling image(s) — press d to remove")

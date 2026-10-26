@@ -65,7 +65,7 @@ def _network(name: str) -> Network:
 
 
 async def _focus(app: DockSurfApp, pilot, tab: TabID, row: int = 0) -> DataTable:
-    await wait_until(lambda: app.snapshot is not None and not app._refresh_in_progress)
+    await wait_until(lambda: app.snapshot is not None and not app._refresh.in_progress)
     await pilot.pause()
     tabs = app.query_one(TabbedContent)
     table = app.query_one(f"#{TABLES[tab]}", DataTable)

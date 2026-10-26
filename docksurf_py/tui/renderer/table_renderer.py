@@ -23,7 +23,7 @@ from docksurf_py.core.render.markup import (
     truncate,
 )
 from docksurf_py.core.session import save_session
-from docksurf_py.core.state.tables import TablesState
+from docksurf_py.core.state.tables import TablesState, row_key
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
@@ -73,34 +73,6 @@ class TableRenderer(_Base):
             table = self.query_one(f"#{entry.table_id}", DataTable)
             self._add_table_columns(table, tab_id, entry)
             table.cursor_type = "row"
-
-    # Temporary read-through aliases onto `self._tables`, kept so existing
-    # tests that inspect the old attributes keep working unchanged while the
-    # UI separation is in progress (local/UI_SEPARATION_PLAN.md, Phase 4
-    # removes them). Each returns the live collection, not a copy.
-    @property
-    def _current(self) -> dict[TabID, list]:
-        return self._tables.rows
-
-    @property
-    def _dirty_tabs(self) -> set[TabID]:
-        return self._tables.dirty
-
-    @property
-    def _collapsed_projects(self) -> set[str]:
-        return self._tables.collapsed_projects
-
-    @property
-    def _marked(self) -> dict[TabID, set[tuple[str, str]]]:
-        return self._tables.marked
-
-    @property
-    def _sort_state(self) -> dict[TabID, tuple[str, bool] | None]:
-        return self._tables.sort_state
-
-    @property
-    def _volume_sizes(self) -> dict[str, int]:
-        return self._details.volume_sizes
 
     def _add_table_columns(
         self, table: DataTable, tab_id: TabID, entry: "ResourceEntry"
@@ -249,7 +221,7 @@ class TableRenderer(_Base):
 
     def _mark_cell(self, tab_id: TabID, item: object) -> SafeMarkup | str:
         """Leading-column cell for a row: the mark glyph if marked, else blank."""
-        return MARK_GLYPH if self._tables.is_marked(tab_id, self._row_key(item)) else ""
+        return MARK_GLYPH if self._tables.is_marked(tab_id, row_key(item)) else ""
 
     def _update_empty_state(
         self,

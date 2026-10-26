@@ -18,6 +18,7 @@ from docksurf_py.core.state.ops import (
     Refusal,
     bind_delete_command,
 )
+from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.widgets import ConfirmDialog
@@ -121,7 +122,7 @@ class ResourceDeletionHandler(_Base):
         jobs: list[BulkJob] = []
         names: list[str] = []
         for item in self._marked_items(tab_id):
-            key = self._row_key(item)
+            key = row_key(item)
             plan = self._plan_delete(tab_id, item)
             if key is None or plan is None:
                 continue

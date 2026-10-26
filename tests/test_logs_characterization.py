@@ -57,7 +57,7 @@ class LogMatchNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             pane = await _open(app, pilot, svc)
-            pane._filter = "error"
+            pane._buffer.filter = "error"
             pane._render_to_view()
             self.assertEqual(_view_lines(pane), ["error: db down", "Error: retry"])
             self.assertIn("filter: error  |  2 matches", _header(pane))
@@ -76,7 +76,7 @@ class LogMatchNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             pane = await _open(app, pilot, svc)
-            pane._filter = "GET"
+            pane._buffer.filter = "GET"
             pane._render_to_view()
             app.action_prev_match()
             self.assertIn("match 2/2", _header(pane))
@@ -86,7 +86,7 @@ class LogMatchNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             pane = await _open(app, pilot, svc)
-            pane._filter = "zzz"
+            pane._buffer.filter = "zzz"
             pane._render_to_view()
             self.assertEqual(_view_lines(pane), [])
             self.assertIn("no matches", _header(pane))
@@ -108,7 +108,7 @@ class LogMatchNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             pane = await _open(app, pilot, svc)
-            pane._filter = "GET"
+            pane._buffer.filter = "GET"
             pane._render_to_view()
             self.assertEqual(
                 pane.export_text().splitlines(),
@@ -125,10 +125,10 @@ class LogMatchNavigationTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             pane = await _open(app, pilot, svc)
-            pane._filter = "error"
+            pane._buffer.filter = "error"
             pane._render_to_view()
             app.action_next_match()
             pane.set_options(LogOptions(tail=100))
             await wait_until(lambda: "2 matches" in _header(pane), timeout=2.0)
-            self.assertEqual(pane._filter, "error")
+            self.assertEqual(pane._buffer.filter, "error")
             self.assertEqual(_view_lines(pane), ["error: db down", "Error: retry"])

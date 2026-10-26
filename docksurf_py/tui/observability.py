@@ -52,17 +52,6 @@ class LiveStatsController(_Base):
     # this mixin's.
     _stats_stream: StatsStream | None = None
 
-    # Temporary read-through aliases onto `self._live`, kept so existing tests
-    # that inspect them keep working unchanged while the UI separation is in
-    # progress (local/UI_SEPARATION_PLAN.md, Phase 4 removes them).
-    @property
-    def _stats_target(self) -> str | None:
-        return self._live.stats_target
-
-    @property
-    def _top_target(self) -> str | None:
-        return self._live.top_target
-
     def _sync_stats(self) -> None:
         item = None
         if self.query_one(TabbedContent).active == TabID.CONTAINERS:
