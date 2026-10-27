@@ -10,7 +10,7 @@ does the fetching, streaming and rendering.
 
 from typing import Any
 
-from docksurf_py.core.models import Container, ContainerDetail
+from docksurf_py.core.models import Container, ContainerDetail, ContainerTop
 
 
 class DetailCache:
@@ -68,11 +68,18 @@ class DetailCache:
 
     def store_container_detail(
         self, container_id: str, detail: ContainerDetail | None
-    ) -> None:
+    ) -> bool:
+        """Cache a fetched detail; True if it differs from what was cached
+        (the card needs repainting). A failed fetch (`None`) keeps the last
+        known value and changes nothing."""
+        changed = (
+            detail is not None and self.container_details.get(container_id) != detail
+        )
         if detail is not None:
             self.container_details[container_id] = detail
         if self._detail_in_flight == container_id:
             self._detail_in_flight = None
+        return changed
 
     def container_detail(self, container_id: str) -> ContainerDetail | None:
         return self.container_details.get(container_id)
@@ -95,6 +102,9 @@ class LiveTargets:
         self.stats_target: str | None = None
         self.generation = 0
         self.top_target: str | None = None
+        # The last process snapshot fetched for `top_target`, so the detail
+        # card can show it on every re-render until the selection moves on.
+        self.top_result: ContainerTop | None = None
 
     # --- Stats stream --------------------------------------------------------
 
@@ -123,15 +133,16 @@ class LiveTargets:
         """Forget the process list if the focus moved off its container.
         True if it was dropped (the panel should be cleared)."""
         if self.top_target is not None and focused_id != self.top_target:
-            self.top_target = None
+            self.clear_top()
             return True
         return False
 
     def toggle_top(self, container_id: str) -> bool:
         """`t` on `container_id`: True to fetch and show, False to hide."""
         if self.top_target == container_id:
-            self.top_target = None
+            self.clear_top()
             return False
+        self.top_result = None
         self.top_target = container_id
         return True
 
@@ -139,5 +150,17 @@ class LiveTargets:
         """Whether a finished fetch for `container_id` is still wanted."""
         return self.top_target == container_id
 
+    def store_top(self, container_id: str, top: ContainerTop) -> bool:
+        """Keep a fetched process list; False (dropped) if it is no longer wanted."""
+        if not self.accepts_top_result(container_id):
+            return False
+        self.top_result = top
+        return True
+
+    def top_for(self, container_id: str) -> ContainerTop | None:
+        """The stored process list if it belongs to `container_id`."""
+        return self.top_result if self.top_target == container_id else None
+
     def clear_top(self) -> None:
         self.top_target = None
+        self.top_result = None

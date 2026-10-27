@@ -3,13 +3,26 @@ container the stats stream / process list follow. Plain pytest, no Textual."""
 
 import unittest
 
-from docksurf_py.core.models import ComposeProject, ContainerDetail
+from docksurf_py.core.models import ComposeProject, ContainerDetail, ContainerTop
 from docksurf_py.core.state.details import DetailCache, LiveTargets
 from tests.test_compose import make_container
 
 
 def _detail() -> ContainerDetail:
     return ContainerDetail(env=["A=1"], health_log=[], started_at="", restart_count=0)
+
+
+class ContainerDetailStoreTests(unittest.TestCase):
+    def test_store_reports_whether_the_detail_changed(self) -> None:
+        cache = DetailCache()
+        self.assertTrue(cache.store_container_detail("c1", _detail()))  # first
+        self.assertFalse(cache.store_container_detail("c1", _detail()))  # same
+        changed = ContainerDetail(
+            env=["B=2"], health_log=[], started_at="", restart_count=0
+        )
+        self.assertTrue(cache.store_container_detail("c1", changed))
+        self.assertFalse(cache.store_container_detail("c1", None))  # failed fetch
+        self.assertEqual(cache.container_detail("c1"), changed)
 
 
 class DetailCacheTests(unittest.TestCase):
@@ -77,6 +90,23 @@ class LiveTargetsTests(unittest.TestCase):
         self.assertTrue(live.is_current(first))
         live.next_generation()
         self.assertFalse(live.is_current(first))
+
+    def test_top_result_is_kept_for_its_container_only(self) -> None:
+        live = LiveTargets()
+        top = ContainerTop(titles=["PID"], processes=[["1"]])
+        self.assertFalse(live.store_top("web", top))  # nothing asked for it
+        live.toggle_top("web")
+        self.assertIsNone(live.top_for("web"))  # still fetching
+        self.assertTrue(live.store_top("web", top))
+        self.assertIs(live.top_for("web"), top)
+        self.assertIsNone(live.top_for("db"))
+        live.drop_stale_top("db")
+        self.assertIsNone(live.top_result)
+        live.toggle_top("web")
+        self.assertIsNone(live.top_result)  # a new fetch starts clean
+        live.store_top("web", top)
+        live.toggle_top("web")  # hide
+        self.assertIsNone(live.top_for("web"))
 
     def test_top_toggle_and_staleness(self) -> None:
         live = LiveTargets()

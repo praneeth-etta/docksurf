@@ -1449,8 +1449,12 @@ class ExecCustomActionTests(unittest.IsolatedAsyncioTestCase):
                 patch(self._WHICH_PATCH_TARGET, return_value="/usr/bin/docker"),
             ):
                 app.action_exec_custom()
+                # The screen is on the stack before its Inputs are mounted.
                 await wait_until(
-                    lambda: any(isinstance(s, PromptScreen) for s in app.screen_stack)
+                    lambda: (
+                        any(isinstance(s, PromptScreen) for s in app.screen_stack)
+                        and bool(app.screen_stack[-1].query(Input))
+                    )
                 )
             screen = app.screen_stack[-1]
             inputs = list(screen.query(Input))
@@ -1470,8 +1474,12 @@ class ExecCustomActionTests(unittest.IsolatedAsyncioTestCase):
                 patch(self._WHICH_PATCH_TARGET, return_value="/usr/bin/docker"),
             ):
                 app.action_exec_custom()
+                # The screen is on the stack before its Inputs are mounted.
                 await wait_until(
-                    lambda: any(isinstance(s, PromptScreen) for s in app.screen_stack)
+                    lambda: (
+                        any(isinstance(s, PromptScreen) for s in app.screen_stack)
+                        and bool(app.screen_stack[-1].query(Input))
+                    )
                 )
             screen = app.screen_stack[-1]
             inputs = list(screen.query(Input))
@@ -1601,7 +1609,10 @@ class CopyFilesActionTests(unittest.IsolatedAsyncioTestCase):
 
             app.action_copy_files()
             await wait_until(
-                lambda: any(isinstance(s, PromptScreen) for s in app.screen_stack)
+                lambda: (
+                    any(isinstance(s, PromptScreen) for s in app.screen_stack)
+                    and bool(app.screen_stack[-1].query(Input))
+                )
             )
             screen = app.screen_stack[-1]
             inputs = list(screen.query(Input))
@@ -3338,8 +3349,8 @@ class SecretMaskingTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def _env_text(pane: DetailPane) -> str:
-        assert pane._env_collapsible is not None
-        static = pane._env_collapsible.query_one("#env-content", Static)
+        static = pane.section_body("env")
+        assert static is not None
         console = Console(width=200, no_color=True)
         with console.capture() as cap:
             console.print(static.content, highlight=False)
@@ -3364,23 +3375,23 @@ class SecretMaskingTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             pane = app.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
-            await wait_until(lambda: pane._env_collapsible is not None)
+            await wait_until(lambda: pane.section_body("env") is not None)
             masked_text = self._env_text(pane)
             self.assertIn("DB_PASSWORD=••••••••", masked_text)
             self.assertIn("PATH=/usr/bin", masked_text)
-            self.assertIn("masked", str(pane._env_collapsible.title))
+            self.assertIn("masked", str(pane.section("env").title))
 
             app.action_toggle_secrets()
             await pilot.pause()
             revealed_text = self._env_text(pane)
             self.assertIn("DB_PASSWORD=supersecret", revealed_text)
-            self.assertIn("revealed", str(pane._env_collapsible.title))
+            self.assertIn("revealed", str(pane.section("env").title))
 
             app.action_toggle_secrets()
             await pilot.pause()
             remasked_text = self._env_text(pane)
             self.assertEqual(remasked_text, masked_text)
-            self.assertIn("masked", str(pane._env_collapsible.title))
+            self.assertIn("masked", str(pane.section("env").title))
 
 
 if __name__ == "__main__":

@@ -125,6 +125,16 @@ DataTable > .datatable--cursor {
     padding: 0 1;
 }
 
+/* `▸` sections under MORE: one compact row each, body indented when open. */
+#detail-pane Collapsible {
+    border-top: none;
+    padding: 0;
+}
+
+#detail-pane Collapsible > Contents {
+    padding: 0 0 0 2;
+}
+
 .muted {
     color: $text-muted;
 }

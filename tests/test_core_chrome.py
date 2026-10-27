@@ -296,3 +296,50 @@ class ListTitleTests(unittest.TestCase):
         self.assertEqual(
             list_title(TabID.VOLUMES, 3, None, grouped=False, total=3), "volumes · 3"
         )
+
+
+class ChipBarTests(unittest.TestCase):
+    COUNTS = {"all": 7, "running": 5, "stopped": 1, "failed": 1}
+
+    def _plain(self, active: str, counts=None) -> str:
+        from docksurf_py.core.render.chrome import chip_bar
+        from docksurf_py.core.state.tables import CONTAINER_CHIPS
+
+        return Text.from_markup(
+            chip_bar(CONTAINER_CHIPS, counts or self.COUNTS, active, P)
+        ).plain
+
+    def test_shows_every_chip_with_counts(self) -> None:
+        self.assertEqual(
+            " ".join(self._plain("all").split()),
+            "all 7 running 5 stopped 1 failed 1",
+        )
+
+    def test_active_chip_is_a_primary_pill(self) -> None:
+        from docksurf_py.core.render.chrome import chip_bar
+        from docksurf_py.core.state.tables import CONTAINER_CHIPS
+
+        out = chip_bar(CONTAINER_CHIPS, self.COUNTS, "running", P)
+        self.assertIn(f"on {P.primary}] running 5 [/]", out)
+
+    def test_failed_chip_is_tinted_only_when_nonzero(self) -> None:
+        from docksurf_py.core.render.chrome import chip_bar
+        from docksurf_py.core.state.tables import CONTAINER_CHIPS
+
+        hot = chip_bar(CONTAINER_CHIPS, self.COUNTS, "all", P)
+        cold = chip_bar(CONTAINER_CHIPS, {**self.COUNTS, "failed": 0}, "all", P)
+        self.assertIn(f"[{P.error} on #", hot)
+        self.assertNotIn(f"[{P.error} on #", cold)
+
+    def test_chips_are_clickable(self) -> None:
+        from docksurf_py.core.render.chrome import chip_bar
+        from docksurf_py.core.state.tables import CONTAINER_CHIPS
+
+        out = chip_bar(CONTAINER_CHIPS, self.COUNTS, "all", P)
+        for key in ("all", "running", "stopped", "failed"):
+            self.assertIn(f"[@click=app.set_chip('{key}')]", out)
+
+    def test_no_chips_is_empty(self) -> None:
+        from docksurf_py.core.render.chrome import chip_bar
+
+        self.assertEqual(chip_bar((), {}, "all", P), "")

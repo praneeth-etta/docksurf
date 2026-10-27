@@ -1,7 +1,7 @@
 """App chrome as Rich markup: the top bar, the bottom key-hint/counts bar and
 list panel titles. Pure builders; the tui widgets only paint what they return."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, NamedTuple
 
@@ -9,8 +9,9 @@ from rich.markup import escape
 from rich.text import Text
 
 from docksurf_py.core.models import DockerSnapshot
-from docksurf_py.core.render.palette import Palette, fg, key_chip, pill
+from docksurf_py.core.render.palette import Palette, blend, fg, key_chip, pill
 from docksurf_py.core.state.status import partition_counts
+from docksurf_py.core.state.tables import ALL_CHIP, Chip
 from docksurf_py.core.types import SafeMarkup, TabID
 
 TAB_LABELS: dict[TabID, str] = {
@@ -318,3 +319,37 @@ def list_title(
         column, reverse = sort_state
         parts.append(f"sorted by {column.lower()} {'▾' if reverse else '▴'}")
     return " · ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Filter chips
+# ---------------------------------------------------------------------------
+
+
+def chip_bar(
+    chips: Sequence[Chip],
+    counts: Mapping[str, int],
+    active: str,
+    p: Palette,
+) -> SafeMarkup:
+    """`all 7  running 5  stopped 1  failed 1`, each chip clickable
+    (`app.set_chip`). The active chip is a pill on primary; an inactive chip
+    in an alarm role with a non-zero count gets a tinted background. Empty
+    for a tab without chips."""
+    if not chips:
+        return SafeMarkup("")
+    parts: list[str] = []
+    for key, label, role in [(ALL_CHIP, "all", "muted")] + [
+        (c.key, c.label, c.role) for c in chips
+    ]:
+        count = counts.get(key, 0)
+        text = f"{label} {count}"
+        if key == active:
+            body = pill(p, text, "primary")
+        elif role != "muted" and count:
+            tint = blend(getattr(p, role), p.background, 0.2)
+            body = SafeMarkup(f"[{getattr(p, role)} on {tint}] {escape(text)} [/]")
+        else:
+            body = fg(p, "muted", f" {text} ")
+        parts.append(f"[@click=app.set_chip('{key}')]{body}[/]")
+    return SafeMarkup(" ".join(parts))

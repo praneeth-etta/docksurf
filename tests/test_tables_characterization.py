@@ -193,7 +193,13 @@ def _cell_texts(app: DockSurfApp, tab: TabID, column: int) -> list[str]:
 
 
 def _marked_rows(app: DockSurfApp, tab: TabID) -> list[int]:
-    return [i for i, cell in enumerate(_cell_texts(app, tab, 0)) if cell == MARK_GLYPH]
+    # A marked row under the cursor shows `✓` in the Containers gutter (phase
+    # 02A) instead of the plain mark glyph.
+    return [
+        i
+        for i, cell in enumerate(_cell_texts(app, tab, 0))
+        if cell == MARK_GLYPH or "✓" in cell
+    ]
 
 
 async def _open(app: DockSurfApp, pilot, tab: TabID) -> DataTable:
@@ -682,7 +688,8 @@ class CollapseSortSearchAcrossRefreshTests(unittest.IsolatedAsyncioTestCase):
 
             await _refresh(app, pilot)
             self.assertEqual(table.row_count, 2)
-            self.assertIn("▸", _cell_texts(app, TabID.CONTAINERS, 1)[0])
+            # The collapse chevron lives in the gutter column (phase 02A).
+            self.assertIn("▸", _cell_texts(app, TabID.CONTAINERS, 0)[0])
 
     async def test_refresh_while_filtering_keeps_filter_and_sort(self) -> None:
         def snap(repos: list[str]) -> DockerSnapshot:

@@ -8,11 +8,45 @@ stay `show=False` and exist purely so the `?` help screen and command palette
 (both of which only read `App.BINDINGS`) still surface every action.
 """
 
+from rich.style import Style
 from textual.binding import Binding
 from textual.widgets import DataTable
 
 
-class ContainerTable(DataTable):
+class ResourceTable(DataTable):
+    """Base for the four resource tables: whole-row background tints and the
+    cursor-gutter bookkeeping. Display state only; which rows are headers or
+    marked is decided by the caller (`TableRenderer`) from core state."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Row index -> extra style (group header surface, marked background).
+        self.row_tints: dict[int, Style] = {}
+        # Row currently showing the `▌` cursor gutter, if any.
+        self.gutter_row: int | None = None
+
+    def clear(self, columns: bool = False):
+        self.row_tints = {}
+        self.gutter_row = None
+        return super().clear(columns=columns)
+
+    def set_row_tint(self, row: int, style: Style | None) -> None:
+        if style is None:
+            self.row_tints.pop(row, None)
+        else:
+            self.row_tints[row] = style
+        self.refresh()
+
+    # Private Textual hook (8.2.7): tints every segment of a row, padding
+    # between cells included. `tests/test_redesign_containers.py` fails if a
+    # Textual upgrade removes or renames it.
+    def _get_row_style(self, row_index: int, base_style: Style) -> Style:
+        style = super()._get_row_style(row_index, base_style)
+        tint = self.row_tints.get(row_index)
+        return style + tint if tint is not None else style
+
+
+class ContainerTable(ResourceTable):
     """A Table specifically for Containers with context-aware bindings."""
 
     def __init__(self, *args, **kwargs) -> None:
@@ -53,11 +87,12 @@ class ContainerTable(DataTable):
         Binding("ctrl+k", "compose_down", "Compose Down"),
         Binding("B", "rebuild_service", "Rebuild", show=False),
         Binding("t", "container_top", "Top"),
+        Binding("F", "cycle_chip", "Status filter", show=False),
         Binding("space", "toggle_mark", "Mark / Collapse", show=False),
     ]
 
 
-class ImageTable(DataTable):
+class ImageTable(ResourceTable):
     """A Table specifically for Images with context-aware bindings."""
 
     BINDINGS = [
@@ -67,7 +102,7 @@ class ImageTable(DataTable):
     ]
 
 
-class VolumeTable(DataTable):
+class VolumeTable(ResourceTable):
     """A Table specifically for Volumes with context-aware bindings."""
 
     BINDINGS = [
@@ -75,7 +110,7 @@ class VolumeTable(DataTable):
     ]
 
 
-class NetworkTable(DataTable):
+class NetworkTable(ResourceTable):
     """A Table specifically for Networks with context-aware bindings."""
 
     BINDINGS = [

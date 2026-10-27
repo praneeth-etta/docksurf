@@ -1,32 +1,24 @@
 """DetailPaneRenderer — formats and pushes resource details into the side pane."""
 
 from rich.markup import escape as _escape
+from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.docker import (
-    format_env,
     format_labels,
-    format_ports,
     format_relative_time,
     format_size,
-    format_uptime,
 )
 from docksurf_py.core.models import ComposeProject
-from docksurf_py.core.render.markup import (
-    format_health_log,
-    health_markup,
-    project_status_markup,
-    status_markup,
-)
+from docksurf_py.core.render.cards import container_card, project_card
 from docksurf_py.core.render.topology import network_topology
 from docksurf_py.core.types import (
-    STATUS_RED,
-    STATUS_YELLOW,
     SafeMarkup,
     TabID,
     markup_green,
     markup_red,
     markup_yellow,
 )
+from docksurf_py.tui.ids import DETAIL_PANE_ID
 from docksurf_py.tui.renderer.common import _Base
 from docksurf_py.tui.widgets import DetailPane
 
@@ -37,12 +29,6 @@ def _dim(value: object) -> SafeMarkup:
     return SafeMarkup(f"[dim]{_escape(str(value))}[/]")
 
 
-def _flag(value: object, *, when: bool, color: str) -> str | SafeMarkup:
-    """Highlight `value` in `color` when `when` is True; otherwise plain text —
-    used to draw the eye to an abnormal restart count / non-zero exit code."""
-    return SafeMarkup(f"[{color}]{_escape(str(value))}[/]") if when else str(value)
-
-
 class DetailPaneRenderer(_Base):
     """Formats and pushes resource details into the side pane on row highlight."""
 
@@ -51,71 +37,43 @@ class DetailPaneRenderer(_Base):
         if row >= len(items):
             return
         item = items[row]
+        p = self._view.palette
         if isinstance(item, ComposeProject):
-            self._show_project_details(pane, item)
+            pane.update_card(project_card(item, p))
+            pane.clear_topology()
             return
         c = item
-        # env/health-log/started-at/restart-count aren't in the list summary.
+        # env/health-log/started-at/restart-count/IPs aren't in the list summary.
         # They're fetched lazily on selection, cached by container id, and remain
         # `None` until that fetch succeeds (or fails).
         detail = self._details.container_detail(c.id)
-
-        identity = {"ID": _dim(c.id), "Image": c.image_name}
-        if c.is_compose:
-            identity["Project"] = c.compose_project
-            identity["Service"] = c.compose_service
-        identity["Image SHA"] = _dim(c.image_id)
-
-        uptime = format_uptime(detail.started_at) if detail else (c.uptime_hint or "—")
-        restarts = (
-            _flag(
-                detail.restart_count, when=detail.restart_count > 0, color=STATUS_YELLOW
+        pane.update_card(
+            container_card(
+                c,
+                detail,
+                p,
+                self._details.reveal_secrets,
+                top=self._live.top_for(c.id),
+                top_loading=self._live.top_target == c.id,
             )
-            if detail
-            else SafeMarkup("[dim]…[/]")
-        )
-        runtime = {
-            "Status": status_markup(c),
-            "Health": health_markup(c),
-            "Uptime": uptime,
-            "Restarts": restarts,
-            "Exit Code": (
-                "—"
-                if c.running
-                else _flag(c.exit_code, when=c.exit_code != 0, color=STATUS_RED)
-            ),
-            "Created": format_relative_time(c.created),
-        }
-
-        network = {
-            "Ports": format_ports(c.ports) if c.ports else "None",
-            "Networks": "\n".join(c.networks) if c.networks else "None",
-        }
-
-        pane.update_details(
-            f"Container: {c.name}",
-            {"Identity": identity, "Runtime": runtime, "Network": network},
-            env_text=format_env(detail.env, reveal=self._details.reveal_secrets)
-            if detail
-            else "…",
-            env_masked=not self._details.reveal_secrets,
-            health_log=format_health_log(detail.health_log) if detail else None,
         )
         pane.clear_topology()
 
-    def _show_project_details(self, pane: DetailPane, project: ComposeProject) -> None:
-        services = "\n".join(
-            f"{c.compose_service or c.name}: {'running' if c.running else c.status}"
-            for c in project.containers
-        )
-        details = {
-            "Services": project_status_markup(project),
-            "Config File": project.config_files or "—",
-            "Working Dir": project.working_dir or "—",
-            "Containers": services or "None",
-        }
-        pane.update_details(f"Project: {project.name}", {"": details})
-        pane.clear_topology()
+    def _refresh_detail_card(self) -> None:
+        """Re-render the focused row's card (after env reveal, `t`, a detail
+        fetch landing, ...)."""
+        if not self.is_running:
+            return
+        active = self.query_one(TabbedContent).active
+        entry = self._resource_registry.get(active)
+        if entry is None:
+            return
+        table = self.query_one(f"#{entry.table_id}", DataTable)
+        pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
+        try:
+            entry.show_details(pane, table.cursor_row)
+        except IndexError:
+            pane.clear_details()
 
     def _show_image_details(self, pane: DetailPane, row: int) -> None:
         images = self._tables.rows.get(TabID.IMAGES, [])

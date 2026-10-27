@@ -40,6 +40,17 @@ ROLE: dict[RunState, str] = {
 }
 
 
+# STATE column sort order: problems first, stopped last.
+STATE_SORT_ORDER: dict[RunState, int] = {
+    RunState.FAILED: 0,
+    RunState.UNHEALTHY: 0,
+    RunState.RUNNING: 1,
+    RunState.STARTING: 2,
+    RunState.PAUSED: 3,
+    RunState.STOPPED: 4,
+}
+
+
 def classify(c: Container) -> RunState:
     if c.state == "paused":
         return RunState.PAUSED

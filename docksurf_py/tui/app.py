@@ -34,6 +34,7 @@ from docksurf_py.core.models import (
     DockerSnapshot,
 )
 from docksurf_py.core.paths import DATA_DIR
+from docksurf_py.core.render.containers import GAUGE_WIDTH, NAME_WIDTH, age_seconds
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.session import SessionState, load_session, save_session
 from docksurf_py.core.state.details import DetailCache, LiveTargets
@@ -45,7 +46,9 @@ from docksurf_py.core.state.ops import (
     plan_volume_delete,
 )
 from docksurf_py.core.state.refresh import RefreshCoordinator
+from docksurf_py.core.state.status import STATE_SORT_ORDER, classify
 from docksurf_py.core.state.tables import (
+    CONTAINER_CHIPS,
     ResourceKind,
     TablesState,
     matches_container,
@@ -174,6 +177,7 @@ class ResourceEntry:
     populate: Callable[[DataTable, list], None]  # (table, rows) -> cells
     show_details: Callable[[DetailPane, int], None]
     column_widths: dict[str, int] = field(default_factory=dict)
+    cursor_gutter: bool = False  # draw `▌` in the leading column under the cursor
 
     @property
     def label(self) -> str:
@@ -224,6 +228,7 @@ class AppContext(Protocol):
     def _sync_stats(self) -> None: ...
     def _sync_top(self) -> None: ...
     def _sync_container_detail(self) -> None: ...
+    def _refresh_detail_card(self) -> None: ...
     def _get_focused_container(self) -> Container | None: ...
     def _get_focused_resource(self, tab_id: TabID) -> Any: ...
     def _get_focused_project(self) -> Any: ...
@@ -232,6 +237,11 @@ class AppContext(Protocol):
     def _restore_selection(
         self, tab_id: TabID, focus_key: tuple[str, str] | None
     ) -> None: ...
+    def _gutter_cell(self, tab_id: TabID, item: Any, is_cursor: bool) -> Any: ...
+    def _paint_gutter(
+        self, table: Any, tab_id: TabID, old: int | None, new: int
+    ) -> None: ...
+    def _retint_row(self, table: Any, tab_id: TabID, row: int) -> None: ...
     def _marked_items(self, tab_id: TabID) -> list[Any]: ...
     def _run_bulk(
         self,
@@ -351,6 +361,7 @@ class DockSurfApp(
         Binding("b", "volume_size", "Volume size on disk", show=False),
         Binding("v", "network_connect", "Connect to network", show=False),
         Binding("m", "network_disconnect", "Disconnect from network", show=False),
+        Binding("F", "cycle_chip", "Cycle status filter", show=False),
         Binding("M", "cycle_theme", "Theme", show=True),
         Binding("~", "show_whale", "Whale", show=True),
     ]
@@ -385,14 +396,26 @@ class DockSurfApp(
                     matches=matches_container,
                     sort_keys={
                         "Name": lambda c: c.name.lower(),
+                        "State": lambda c: STATE_SORT_ORDER[classify(c)],
+                        "Uptime": age_seconds,
                         "Image": lambda c: c.image_name.lower(),
                     },
                     groups_by_project=True,
+                    chips=CONTAINER_CHIPS,
                 ),
                 table_id=TableID.CONTAINERS,
-                columns=("Name", "Image"),
+                columns=("Name", "State", "Uptime", "Ports", "CPU", "Mem", "Image"),
                 populate=self._populate_container_table,
                 show_details=self._show_container_details,
+                column_widths={
+                    "Name": NAME_WIDTH,
+                    "State": 16,
+                    "Uptime": 9,
+                    "Ports": 17,
+                    "CPU": GAUGE_WIDTH,
+                    "Mem": GAUGE_WIDTH,
+                },
+                cursor_gutter=True,
             ),
             TabID.IMAGES: ResourceEntry(
                 kind=ResourceKind(
@@ -607,6 +630,7 @@ class DockSurfApp(
         entry = self._resource_registry.get(active)
         if entry is None or event.control.id != entry.table_id:
             return
+        self._paint_gutter(event.control, active, None, event.cursor_row)
         pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
         try:
             entry.show_details(pane, event.cursor_row)

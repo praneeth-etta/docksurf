@@ -14,6 +14,7 @@ from docksurf_py.core.docker.format import (
     format_relative_time,
     format_size,
     format_uptime,
+    secret_env_count,
 )
 from docksurf_py.core.docker.streams import (
     ComposeBuildStream,
@@ -43,6 +44,7 @@ __all__ = [
     "format_ports",
     "format_labels",
     "format_env",
+    "secret_env_count",
     "_split_timestamp",
     "_strip_ansi",
     "_assign_service_colors",

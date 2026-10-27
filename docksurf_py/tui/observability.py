@@ -19,7 +19,6 @@ from docksurf_py.core.models import Container, ContainerStats, ContainerTop, Sys
 from docksurf_py.core.render.observability import (
     render_df,
     render_stats,
-    render_top,
 )
 from docksurf_py.core.types import SafeMarkup, TabID
 from docksurf_py.tui.ids import DETAIL_PANE_ID
@@ -126,7 +125,7 @@ class LiveStatsController(_Base):
         """Invalidate a stale process list when the selection moves on.
 
         Unlike stats, `top` is on-demand (`t` toggles/fetches it), so this
-        never re-fetches automatically — it only clears the panel when the
+        never re-fetches automatically — it only forgets the list when the
         focused container id no longer matches whatever it was fetched for.
         """
         item = None
@@ -134,8 +133,9 @@ class LiveStatsController(_Base):
             item = self._get_focused_resource(TabID.CONTAINERS)
         focused_id = item.id if isinstance(item, Container) else None
 
-        if self._live.drop_stale_top(focused_id):
-            self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).clear_processes()
+        # The card for the new selection is already drawn without the old
+        # container's processes; dropping them is all that is left to do.
+        self._live.drop_stale_top(focused_id)
 
     def action_container_top(self) -> None:
         if self.query_one(TabbedContent).active != TabID.CONTAINERS:
@@ -155,13 +155,15 @@ class LiveStatsController(_Base):
             self.notify(f"{escape(c.name)} is not running", severity="warning")
             return
 
+        pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
         if not self._live.toggle_top(c.id):
             # Was already showing this container's processes — toggled off.
-            self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).clear_processes()
+            self._refresh_detail_card()
+            pane.collapse_section("top")
             return
 
-        pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
-        pane.update_processes(SafeMarkup("[dim]fetching processes…[/]"))
+        self._refresh_detail_card()
+        pane.expand_section("top")
         self._fetch_top(c.id, c.name)
 
     @work(thread=True)
@@ -179,9 +181,11 @@ class LiveStatsController(_Base):
         pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
         if top is None:
             self._live.clear_top()
-            pane.clear_processes()
+            self._refresh_detail_card()
+            pane.collapse_section("top")
             self.notify(
                 f"Could not fetch processes for {escape(name)}", severity="error"
             )
             return
-        pane.update_processes(render_top(top, name))
+        self._live.store_top(container_id, top)
+        self._refresh_detail_card()

@@ -103,8 +103,16 @@ class ContainerActionHandler(_Base):
     def _apply_container_detail(
         self, container_id: str, detail: ContainerDetail | None
     ) -> None:
-        self._details.store_container_detail(container_id, detail)
+        if not self._details.store_container_detail(container_id, detail):
+            return  # nothing new to show
+        if not self.is_running:
+            return  # a fetch landing during teardown: the widgets are gone
         if self.query_one(TabbedContent).active != TabID.CONTAINERS:
+            return
+        # The cursor may have moved on while this was in flight; repainting the
+        # now-focused row for someone else's detail is a wasted render.
+        focused = self._get_focused_container()
+        if focused is None or focused.id != container_id:
             return
         entry = self._resource_registry[TabID.CONTAINERS]
         table = self.query_one(f"#{entry.table_id}", DataTable)

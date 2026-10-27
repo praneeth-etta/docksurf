@@ -17,6 +17,7 @@ from docksurf_py.core.models import (
 from docksurf_py.core.state.logs import LogBuffer, line_matches, write_log_export
 from docksurf_py.core.state.ops import DeletePlan, bind_delete_command
 from docksurf_py.core.state.tables import (
+    CONTAINER_CHIPS,
     ResourceKind,
     TablesState,
     matches_container,
@@ -399,3 +400,104 @@ class LogBufferTests(unittest.TestCase):
         buf.ingest(_log("a", "b"), render=False)
         buf.set_filter("a")
         self.assertEqual(buf.export_text(), "t0 a\nt1 b")
+
+
+def _chip_state() -> tuple[TablesState, DockerSnapshot]:
+    kind = ResourceKind(
+        label="container",
+        snapshot_items=lambda snap: snap.containers,
+        matches=matches_container,
+        groups_by_project=True,
+        chips=CONTAINER_CHIPS,
+    )
+    broken = make_container("broken", running=False)
+    broken.exit_code = 1
+    snapshot = DockerSnapshot(
+        containers=[
+            make_container("web", project="shop", service="web"),
+            make_container("db", project="shop", service="db", running=False),
+            make_container("cache", project="cold", service="cache", running=False),
+            make_container("solo"),
+            broken,
+        ],
+        images=[],
+        volumes=[],
+        networks=[],
+    )
+    return TablesState({TabID.CONTAINERS: kind}), snapshot
+
+
+def _row_names(rows: list) -> list[str]:
+    return [r.name for r in rows]
+
+
+class ChipTests(unittest.TestCase):
+    def test_defaults_to_all_and_shows_everything(self) -> None:
+        state, snap = _chip_state()
+        self.assertEqual(state.active_chip[TabID.CONTAINERS], "all")
+        rows = state.build_rows(TabID.CONTAINERS, snap)
+        self.assertEqual(len(rows), 5 + 2)  # containers + two project headers
+
+    def test_filters_after_query_and_before_grouping(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "running")
+        rows = state.build_rows(TabID.CONTAINERS, snap)
+        # The shop header only lists its running service; `cold` has none, so
+        # its header is hidden.
+        self.assertEqual(_row_names(rows), ["shop", "web", "solo"])
+        self.assertEqual(_row_names(rows[0].containers), ["web"])  # type: ignore[union-attr]
+
+    def test_chip_composes_with_text_query(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "stopped")
+        rows = state.build_rows(TabID.CONTAINERS, snap, "shop")
+        self.assertEqual(_row_names(rows), ["shop", "db"])
+
+    def test_failed_chip_catches_nonzero_exit(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "failed")
+        self.assertEqual(
+            _row_names(state.build_rows(TabID.CONTAINERS, snap)), ["broken"]
+        )
+
+    def test_counts_are_after_query_but_before_chip(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "failed")
+        self.assertEqual(
+            state.chip_counts(TabID.CONTAINERS, snap),
+            {"all": 5, "running": 2, "stopped": 2, "failed": 1},
+        )
+        self.assertEqual(
+            state.chip_counts(TabID.CONTAINERS, snap, "shop"),
+            {"all": 2, "running": 1, "stopped": 1, "failed": 0},
+        )
+
+    def test_cycle_wraps_back_to_all(self) -> None:
+        state, _ = _chip_state()
+        seen = [state.cycle_chip(TabID.CONTAINERS) for _ in range(5)]
+        self.assertEqual(seen, ["running", "stopped", "failed", "all", "running"])
+
+    def test_set_chip_rejects_unknown_keys(self) -> None:
+        state, _ = _chip_state()
+        self.assertFalse(state.set_chip(TabID.CONTAINERS, "nope"))
+        self.assertEqual(state.active_chip[TabID.CONTAINERS], "all")
+
+    def test_tab_without_chips_stays_on_all(self) -> None:
+        state = TablesState(
+            {
+                TabID.IMAGES: ResourceKind(
+                    label="image",
+                    snapshot_items=lambda snap: snap.images,
+                    matches=matches_image,
+                )
+            }
+        )
+        self.assertEqual(state.cycle_chip(TabID.IMAGES), "all")
+
+    def test_chip_survives_a_snapshot(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "stopped")
+        state.apply_snapshot(snap, TabID.CONTAINERS)
+        self.assertEqual(state.active_chip[TabID.CONTAINERS], "stopped")
+        rows = state.build_rows(TabID.CONTAINERS, snap)
+        self.assertEqual(_row_names(rows), ["cold", "cache", "shop", "db"])

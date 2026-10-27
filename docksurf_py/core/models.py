@@ -124,6 +124,10 @@ class ContainerDetail:
     health_log: list[HealthProbe]
     started_at: str
     restart_count: int
+    # Network name -> this container's IP on it (`NetworkSettings.Networks`).
+    network_ips: dict[str, str] = field(default_factory=dict)
+    # `Config.Healthcheck.Interval` in seconds, None without a healthcheck.
+    health_interval_s: float | None = None
 
 
 @dataclass(slots=True)

@@ -109,6 +109,15 @@ def format_labels(labels: dict[str, str]) -> str:
     return ", ".join(f"{k}={v}" for k, v in labels.items())
 
 
+def secret_env_count(env: list[str]) -> int:
+    """How many `KEY=VALUE` entries `format_env` would mask."""
+    return sum(
+        1
+        for entry in env
+        if (parts := entry.partition("="))[1] and _SECRET_KEY_RE.search(parts[0])
+    )
+
+
 def format_env(env: list[str], reveal: bool = False) -> str:
     """Render `KEY=VALUE` env entries, one per line.
 

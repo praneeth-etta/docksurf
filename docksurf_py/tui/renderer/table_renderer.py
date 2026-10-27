@@ -1,9 +1,10 @@
 """TableRenderer — column setup and row-population for the four resource tables."""
 
-import os
 from typing import TYPE_CHECKING
 
 from rich.markup import escape
+from rich.style import Style
+from textual.coordinate import Coordinate
 from textual.widgets import DataTable, Input, Static, TabbedContent
 
 from docksurf_py.core.docker import format_size
@@ -14,16 +15,19 @@ from docksurf_py.core.models import (
     Network,
     Volume,
 )
+from docksurf_py.core.render.containers import (
+    chevron,
+    container_row_cells,
+    project_row_cells,
+)
 from docksurf_py.core.render.markup import (
     image_status_markup,
     network_containers_markup,
-    project_status_color,
-    status_color,
-    status_dot,
     truncate,
 )
+from docksurf_py.core.render.palette import fg
 from docksurf_py.core.session import save_session
-from docksurf_py.core.state.tables import TablesState, row_key
+from docksurf_py.core.state.tables import ALL_CHIP, TablesState, row_key
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
@@ -37,6 +41,7 @@ from docksurf_py.tui.ids import (
     SEARCH_BAR_ID,
 )
 from docksurf_py.tui.renderer.common import _Base
+from docksurf_py.tui.widgets.tables import ResourceTable
 
 if TYPE_CHECKING:
     from docksurf_py.tui.app import ResourceEntry
@@ -128,36 +133,19 @@ class TableRenderer(_Base):
     ) -> None:
         """Write container rows: a Compose project header, its service rows
         (unless collapsed), and standalone containers, in `rows` order."""
+        p = self._view.palette
         project: ComposeProject | None = None
         for row in rows:
             if isinstance(row, ComposeProject):
                 project = row
-                collapsed = self._tables.is_collapsed(row.name)
-                glyph = "▸" if collapsed else "▾"
-                config = (
-                    os.path.basename(row.config_files.split(",")[0].strip())
-                    if row.config_files
-                    else ""
-                )
-                dot = status_dot(project_status_color(row))
-                _safe_row(
-                    table,
-                    "",  # project headers can't be marked
-                    SafeMarkup(f"[b]{glyph}[/b] {dot} [b]{escape(row.name)}[/b]"),
-                    config,
-                )
-                continue
-            mark = self._mark_cell(TabID.CONTAINERS, row)
-            dot = status_dot(status_color(row))
-            if row.is_compose and project is not None:
-                last = row is project.containers[-1]
-                branch = "└" if last else "├"
-                name = SafeMarkup(
-                    f"  {branch} {dot} {escape(row.compose_service or row.name)}"
-                )
+                cells = project_row_cells(row, p)
             else:
-                name = SafeMarkup(f"{dot} {escape(row.name)}")
-            _safe_row(table, mark, name, row.image_name)
+                branch = None
+                if row.is_compose and project is not None:
+                    branch = "└─" if row is project.containers[-1] else "├─"
+                cells = container_row_cells(row, branch=branch, p=p)
+            _safe_row(table, self._gutter_cell(TabID.CONTAINERS, row, False), *cells)
+        self._finish_populate(TabID.CONTAINERS, table, rows)
 
     def _rerender_active_table(self) -> None:
         """Re-populate the active tab's table honouring any active search filter.
@@ -193,6 +181,7 @@ class TableRenderer(_Base):
                 format_size(i.size_bytes),
                 image_status_markup(i.used_by),
             )
+        self._finish_populate(TabID.IMAGES, table, rows)
 
     def _populate_volume_table(self, table: DataTable, rows: list[Volume]) -> None:
         for v in rows:
@@ -207,6 +196,7 @@ class TableRenderer(_Base):
                 else SafeMarkup("[dim]—[/]")
             )
             _safe_row(table, self._mark_cell(TabID.VOLUMES, v), raw, size, status)
+        self._finish_populate(TabID.VOLUMES, table, rows)
 
     def _populate_network_table(self, table: DataTable, rows: list[Network]) -> None:
         containers = self.snapshot.containers if self.snapshot else []
@@ -219,10 +209,77 @@ class TableRenderer(_Base):
                 n.scope,
                 network_containers_markup(n, containers),
             )
+        self._finish_populate(TabID.NETWORKS, table, rows)
 
     def _mark_cell(self, tab_id: TabID, item: object) -> SafeMarkup | str:
         """Leading-column cell for a row: the mark glyph if marked, else blank."""
         return MARK_GLYPH if self._tables.is_marked(tab_id, row_key(item)) else ""
+
+    def _gutter_cell(
+        self, tab_id: TabID, item: object, is_cursor: bool
+    ) -> SafeMarkup | str:
+        """Leading 2-column cell: a project header's chevron, `▌` under the
+        cursor, `✓` when the cursor row is marked, else the mark glyph. Only
+        tabs whose entry sets `cursor_gutter` draw the cursor."""
+        p = self._view.palette
+        if isinstance(item, ComposeProject):
+            return chevron(self._tables.is_collapsed(item.name), p)
+        marked = self._tables.is_marked(tab_id, row_key(item))
+        if is_cursor and self._resource_registry[tab_id].cursor_gutter:
+            if marked:
+                return SafeMarkup(f"[bold {p.primary}]✓[/]")
+            return fg(p, "primary", "▌")
+        return MARK_GLYPH if marked else ""
+
+    def _row_tint(self, tab_id: TabID, item: object) -> Style | None:
+        """Background for a header (`surface`) or marked (`marked_bg`) row;
+        None on terminal-native themes, which have no colours to tint with."""
+        p = self._view.palette
+        if isinstance(item, ComposeProject):
+            colour = p.surface
+        elif self._tables.is_marked(tab_id, row_key(item)):
+            colour = p.marked_bg
+        else:
+            return None
+        return None if colour == "default" else Style(bgcolor=colour)
+
+    def _finish_populate(self, tab_id: TabID, table: DataTable, rows: list) -> None:
+        """After a populate: row tints, and the cursor gutter on the row the
+        (freshly cleared) table's cursor sits on."""
+        if not isinstance(table, ResourceTable):
+            return
+        for index, item in enumerate(rows):
+            tint = self._row_tint(tab_id, item)
+            if tint is not None:
+                table.row_tints[index] = tint
+        if rows and self._resource_registry[tab_id].cursor_gutter:
+            self._paint_gutter(table, tab_id, None, table.cursor_row)
+
+    def _paint_gutter(
+        self, table: DataTable, tab_id: TabID, old: int | None, new: int
+    ) -> None:
+        """Move the `▌` from `old` to `new` with two cell updates (no repopulate)."""
+        rows = self._tables.rows.get(tab_id, [])
+        if not isinstance(table, ResourceTable):
+            return
+        if not self._resource_registry[tab_id].cursor_gutter:
+            return
+        if old is None:
+            old = table.gutter_row
+        if old is not None and old != new and old < min(len(rows), table.row_count):
+            table.update_cell_at(
+                Coordinate(old, 0), self._gutter_cell(tab_id, rows[old], False)
+            )
+        if new < min(len(rows), table.row_count):
+            table.update_cell_at(
+                Coordinate(new, 0), self._gutter_cell(tab_id, rows[new], True)
+            )
+            table.gutter_row = new
+
+    def _retint_row(self, table: DataTable, tab_id: TabID, row: int) -> None:
+        rows = self._tables.rows.get(tab_id, [])
+        if isinstance(table, ResourceTable) and row < len(rows):
+            table.set_row_tint(row, self._row_tint(tab_id, rows[row]))
 
     def _update_empty_state(
         self,
@@ -246,8 +303,13 @@ class TableRenderer(_Base):
             return
         table.display = False
         empty.display = True
+        chip = self._tables.active_chip[tab_id]
         if query:
             message = f"No {entry.label}s match {query!r}"
+            if chip != ALL_CHIP:
+                message += f" ({chip})"
+        elif chip != ALL_CHIP:
+            message = f"No {chip} {entry.label}s"
         elif not self.docker.is_connected:
             state = self.docker.connection
             message = state.message

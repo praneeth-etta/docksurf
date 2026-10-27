@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from textual.timer import Timer
 from textual.widgets import DataTable, Input, TabbedContent
 
+from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import SEARCH_BAR_ID
 
 if TYPE_CHECKING:
@@ -37,6 +38,20 @@ class ResourceSearchController(_Base):
 
     def action_open_search(self) -> None:
         self.query_one(f"#{SEARCH_BAR_ID}", Input).focus()
+
+    def action_cycle_chip(self) -> None:
+        """`F`: next status chip on the active tab (wraps back to `all`)."""
+        active = TabID(self.query_one(TabbedContent).active)
+        if not self._resource_registry[active].kind.chips:
+            return
+        self._tables.cycle_chip(active)
+        self._rerender_active_table()
+
+    def action_set_chip(self, key: str) -> None:
+        """Click on a chip in the chip bar."""
+        active = TabID(self.query_one(TabbedContent).active)
+        if self._tables.set_chip(active, key):
+            self._rerender_active_table()
 
     def on_search_changed(self, event: Input.Changed) -> None:
         # Debounced like LogPane's filter (log_pane.py): otherwise each keystroke

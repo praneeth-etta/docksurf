@@ -11,7 +11,6 @@ from docksurf_py.core.state.ops import BulkJob, BulkResult, run_bulk
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base
-from docksurf_py.tui.ids import MARK_GLYPH
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +46,9 @@ class SelectionHandler(_Base):
         row = table.cursor_row
         if row is None:
             return
-        now_marked = self._tables.toggle_mark(active, key)
-        table.update_cell_at(Coordinate(row, 0), MARK_GLYPH if now_marked else "")
+        self._tables.toggle_mark(active, key)
+        table.update_cell_at(Coordinate(row, 0), self._gutter_cell(active, item, True))
+        self._retint_row(table, active, row)
         self._repaint_bottom_bar()
 
         # Advance the cursor — mark-and-move, k9s-style rapid selection.

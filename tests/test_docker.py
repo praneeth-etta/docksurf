@@ -842,6 +842,33 @@ class ContainerDetailTests(unittest.TestCase):
         self.assertEqual(result.health_log[0].exit_code, 1)
         self.assertEqual(result.health_log[0].output, "boom")
 
+    def test_maps_network_ips_and_health_interval(self) -> None:
+        client = self._client()
+        client._sdk.containers.get.return_value.attrs = {
+            "NetworkSettings": {
+                "Networks": {
+                    "app_default": {"IPAddress": "172.18.0.7"},
+                    "host": {"IPAddress": ""},  # no address on this network
+                }
+            },
+            "Config": {"Healthcheck": {"Interval": 10_000_000_000}},
+        }
+        result = client.container_detail("abc")
+        assert result is not None
+        self.assertEqual(result.network_ips, {"app_default": "172.18.0.7"})
+        self.assertEqual(result.health_interval_s, 10.0)
+
+    def test_network_ips_and_interval_default_when_absent(self) -> None:
+        client = self._client()
+        client._sdk.containers.get.return_value.attrs = {
+            "NetworkSettings": {"Networks": None},
+            "Config": {"Healthcheck": {"Test": ["NONE"]}},
+        }
+        result = client.container_detail("abc")
+        assert result is not None
+        self.assertEqual(result.network_ips, {})
+        self.assertIsNone(result.health_interval_s)
+
     def test_not_found_returns_none(self) -> None:
         client = self._client()
         client._sdk.containers.get.side_effect = NotFound("no such container")

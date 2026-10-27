@@ -174,11 +174,19 @@ def _parse_container_detail(attrs: dict) -> ContainerDetail:
         for probe in (health_info.get("Log") or [])
     ]
     config = attrs.get("Config", {}) or {}
+    networks = (attrs.get("NetworkSettings") or {}).get("Networks") or {}
+    interval_ns = (config.get("Healthcheck") or {}).get("Interval") or 0
     return ContainerDetail(
         env=config.get("Env", []),
         health_log=health_log,
         started_at=sdk_state.get("StartedAt", ""),
         restart_count=attrs.get("RestartCount", 0),
+        network_ips={
+            name: ip
+            for name, net in networks.items()
+            if (ip := (net or {}).get("IPAddress"))
+        },
+        health_interval_s=interval_ns / 1e9 if interval_ns > 0 else None,
     )
 
 

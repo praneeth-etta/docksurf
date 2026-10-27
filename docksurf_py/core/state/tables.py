@@ -20,6 +20,7 @@ from docksurf_py.core.models import (
 )
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.state.ops import DeletePlan, Refusal
+from docksurf_py.core.state.status import RunState, classify
 from docksurf_py.core.types import TabID
 
 RowKey = tuple[str, str]
@@ -107,6 +108,35 @@ def matches_network(n: Network, q: str) -> bool:
     return q in n.name.lower() or q in n.driver.lower() or q in n.subnet.lower()
 
 
+ALL_CHIP = "all"
+
+
+@dataclass(frozen=True)
+class Chip:
+    """One status filter on a tab (`running`, `stopped`, ...). `matches` takes
+    the resource; `role` is the palette role it shows in when inactive."""
+
+    key: str
+    label: str
+    matches: Callable[[Any], bool]
+    role: str = "muted"
+
+
+def _in_states(*states: RunState) -> Callable[[Container], bool]:
+    return lambda c: classify(c) in states
+
+
+CONTAINER_CHIPS: tuple[Chip, ...] = (
+    Chip(
+        "running",
+        "running",
+        _in_states(RunState.RUNNING, RunState.STARTING, RunState.PAUSED),
+    ),
+    Chip("stopped", "stopped", _in_states(RunState.STOPPED)),
+    Chip("failed", "failed", _in_states(RunState.FAILED, RunState.UNHEALTHY), "error"),
+)
+
+
 @dataclass(frozen=True)
 class ResourceKind:
     """What core needs to know about one resource type to build its table rows.
@@ -116,7 +146,8 @@ class ResourceKind:
     sortable column name to its key function. `groups_by_project` turns on
     Compose project grouping (header rows + collapsible service rows).
     `plan_delete` decides how one item is deleted (or why it can't be);
-    None means the type has no delete.
+    None means the type has no delete. `chips` are the tab's status filters;
+    an implicit `all` chip (no filtering) comes first.
     """
 
     label: str  # singular, human-readable — used in "No {label} selected"
@@ -127,6 +158,7 @@ class ResourceKind:
     plan_delete: Callable[[DockerService, Any], DeletePlan | Refusal | None] | None = (
         None
     )
+    chips: tuple[Chip, ...] = ()
 
 
 class TablesState:
@@ -158,6 +190,8 @@ class TablesState:
         self.dirty: set[TabID] = set()
         # Compose project names whose service rows are hidden.
         self.collapsed_projects: set[str] = set()
+        # Active status chip per tab (`ALL_CHIP` = no chip filter).
+        self.active_chip: dict[TabID, str] = {tab: ALL_CHIP for tab in self.kinds}
 
     # --- Snapshot lifecycle --------------------------------------------------
 
@@ -184,18 +218,69 @@ class TablesState:
     # --- Rows ----------------------------------------------------------------
 
     def build_rows(self, tab: TabID, snapshot: DockerSnapshot, query: str = "") -> list:
-        """Filter by `query`, apply the tab's sort, group/collapse Compose
-        projects where the kind asks for it, and store the result as the tab's
-        rows. Doesn't touch the dirty flag (see `mark_clean`)."""
+        """Filter by `query`, then by the active chip, apply the tab's sort,
+        group/collapse Compose projects where the kind asks for it, and store
+        the result as the tab's rows. Grouping runs last, so a project header
+        only appears with its matching services. Doesn't touch the dirty flag
+        (see `mark_clean`)."""
+        kind = self.kinds[tab]
+        items = self._queried(tab, snapshot, query)
+        chip = self._active_chip(tab)
+        if chip is not None:
+            items = [item for item in items if chip.matches(item)]
+        items = self._sorted(tab, items)
+        rows = self._grouped(tab, items) if kind.groups_by_project else items
+        self.rows[tab] = rows
+        return rows
+
+    def _queried(self, tab: TabID, snapshot: DockerSnapshot, query: str) -> list:
         kind = self.kinds[tab]
         items = kind.snapshot_items(snapshot)
         if query:
             q = query.lower()
             items = [item for item in items if kind.matches(item, q)]
-        items = self._sorted(tab, items)
-        rows = self._grouped(tab, items) if kind.groups_by_project else items
-        self.rows[tab] = rows
-        return rows
+        return items
+
+    # --- Chips ---------------------------------------------------------------
+
+    def _active_chip(self, tab: TabID) -> Chip | None:
+        """The active chip, or None for `all` (or a key the kind no longer has)."""
+        key = self.active_chip.get(tab, ALL_CHIP)
+        return next((c for c in self.kinds[tab].chips if c.key == key), None)
+
+    def chip_keys(self, tab: TabID) -> list[str]:
+        """Chip keys in cycle order, `all` first."""
+        return [ALL_CHIP, *(c.key for c in self.kinds[tab].chips)]
+
+    def set_chip(self, tab: TabID, key: str) -> bool:
+        """Activate chip `key`; returns False (state unchanged) if the tab has
+        no such chip."""
+        if key not in self.chip_keys(tab):
+            return False
+        self.active_chip[tab] = key
+        return True
+
+    def cycle_chip(self, tab: TabID) -> str:
+        """Advance to the next chip, wrapping back to `all`. A tab without
+        chips stays on `all`."""
+        keys = self.chip_keys(tab)
+        current = self.active_chip.get(tab, ALL_CHIP)
+        nxt = (
+            keys[(keys.index(current) + 1) % len(keys)] if current in keys else keys[0]
+        )
+        self.active_chip[tab] = nxt
+        return nxt
+
+    def chip_counts(
+        self, tab: TabID, snapshot: DockerSnapshot, query: str = ""
+    ) -> dict[str, int]:
+        """Matches per chip (including `all`) after the text query but before
+        the chip filter, so the numbers stay put as the chip changes."""
+        items = self._queried(tab, snapshot, query)
+        counts = {ALL_CHIP: len(items)}
+        for chip in self.kinds[tab].chips:
+            counts[chip.key] = sum(1 for item in items if chip.matches(item))
+        return counts
 
     def index_of(self, tab: TabID, key: RowKey) -> int | None:
         for idx, item in enumerate(self.rows.get(tab, [])):

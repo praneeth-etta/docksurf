@@ -14,6 +14,7 @@ from docksurf_py.core.render.chrome import (
     HintContext,
     RowKind,
     bottom_bar,
+    chip_bar,
     global_counts,
     key_hints,
     list_title,
@@ -25,12 +26,13 @@ from docksurf_py.core.state.view import LayoutMode
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
+    CHIP_BAR_ID,
     FILTER_PLACEHOLDERS,
     LIST_PANEL_ID,
     SEARCH_BAR_ID,
     TOP_BAR_ID,
 )
-from docksurf_py.tui.widgets import BottomBar, SearchBar, TopBar
+from docksurf_py.tui.widgets import BottomBar, ChipBar, SearchBar, TopBar
 
 if TYPE_CHECKING:
     from docksurf_py.tui.app import AppContext
@@ -120,9 +122,19 @@ class ChromeController(_Base):
             grouped=entry.kind.groups_by_project,
             total=total,
         )
-        self.query_one(
-            f"#{SEARCH_BAR_ID}", SearchBar
-        ).placeholder = FILTER_PLACEHOLDERS[active]
+        search_bar = self.query_one(f"#{SEARCH_BAR_ID}", SearchBar)
+        search_bar.placeholder = FILTER_PLACEHOLDERS[active]
+        self._repaint_chip_bar(active, search_bar.value)
+
+    def _repaint_chip_bar(self, active: TabID, query: str) -> None:
+        chips = self._resource_registry[active].kind.chips
+        markup = ""
+        if chips and self.snapshot is not None:
+            counts = self._tables.chip_counts(active, self.snapshot, query)
+            markup = chip_bar(
+                chips, counts, self._tables.active_chip[active], self._view.palette
+            )
+        self.query_one(f"#{CHIP_BAR_ID}", ChipBar).set_markup(markup)
 
     def _hint_context(self) -> HintContext:
         active = TabID(self.query_one(TabbedContent).active)
