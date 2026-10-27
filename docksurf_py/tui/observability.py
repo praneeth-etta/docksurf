@@ -8,21 +8,24 @@ a mixin composed into DockSurfApp via MRO, mirroring search.py's structure.
 
 import logging
 import threading
+import time
 from typing import TYPE_CHECKING
 
 from rich.markup import escape
 from textual import work
+from textual.timer import Timer
 from textual.widgets import TabbedContent
 
 from docksurf_py.core.docker import StatsStream
 from docksurf_py.core.models import Container, ContainerStats, ContainerTop, SystemDf
 from docksurf_py.core.render.observability import (
     render_df,
-    render_stats,
+    render_live,
 )
-from docksurf_py.core.types import SafeMarkup, TabID
-from docksurf_py.tui.ids import DETAIL_PANE_ID
-from docksurf_py.tui.widgets import DetailPane, SystemDfScreen
+from docksurf_py.core.render.palette import fg
+from docksurf_py.core.types import TabID
+from docksurf_py.tui.ids import DETAIL_PANE_ID, LIVE_PANEL_ID
+from docksurf_py.tui.widgets import DetailPane, LivePanel, SystemDfScreen
 
 if TYPE_CHECKING:
     from docksurf_py.tui.app import AppContext
@@ -34,6 +37,9 @@ else:
     _Base = object
 
 logger = logging.getLogger(__name__)
+
+# How long the cursor must rest before the side panels retarget to its row.
+SIDE_RETARGET_DELAY = 0.3
 
 
 class LiveStatsController(_Base):
@@ -51,6 +57,31 @@ class LiveStatsController(_Base):
     # this mixin's.
     _stats_stream: StatsStream | None = None
 
+    # Pending debounce timer for `_schedule_side_retarget`.
+    _side_retarget_timer: Timer | None = None
+
+    def _schedule_side_retarget(self) -> None:
+        """Retarget the side panels once the cursor has been still for
+        `SIDE_RETARGET_DELAY`; every call restarts the wait."""
+        if self._side_retarget_timer is not None:
+            self._side_retarget_timer.stop()
+        self._side_retarget_timer = self.set_timer(
+            SIDE_RETARGET_DELAY, self._retarget_side
+        )
+
+    def _retarget_side(self) -> None:
+        """Point everything that follows the cursor at the focused row now:
+        the stats stream, the `top` list and the lazily fetched details."""
+        timer, self._side_retarget_timer = self._side_retarget_timer, None
+        if timer is not None:
+            timer.stop()
+        if not self.is_running:
+            return
+        self._sync_stats()
+        self._sync_top()
+        self._sync_image_architecture()
+        self._sync_container_detail()
+
     def _sync_stats(self) -> None:
         item = None
         if self.query_one(TabbedContent).active == TabID.CONTAINERS:
@@ -60,11 +91,13 @@ class LiveStatsController(_Base):
             return
 
         self._stop_stats_stream()
-        pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
+        panel = self.query_one(f"#{LIVE_PANEL_ID}", LivePanel)
         if target is None:
-            pane.clear_live_stats()
+            panel.clear_live()
+            panel.display = False
             return
-        pane.update_live_stats(SafeMarkup("[dim]collecting stats…[/]"))
+        panel.display = True
+        panel.show_message(fg(self._view.palette, "muted", "collecting stats…"))
         assert isinstance(item, Container)
         self._start_stats_stream(target, item.name)
 
@@ -90,11 +123,15 @@ class LiveStatsController(_Base):
     def _render_stats_sample(
         self, generation: int, stats: ContainerStats, name: str
     ) -> None:
-        # A late sample from a superseded stream must not overwrite the pane.
+        # A late sample from a superseded stream must not overwrite the panel.
         if not self._live.is_current(generation):
             return
-        pane = self.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
-        pane.update_live_stats(render_stats(stats, name))
+        history = self._live.history
+        history.push(stats, time.monotonic())
+        palette = self._view.palette
+        self.query_one(f"#{LIVE_PANEL_ID}", LivePanel).show_live(
+            lambda width: render_live(history, palette, width)
+        )
 
     def _stop_stats_stream(self) -> None:
         self._live.next_generation()  # invalidate any in-flight pump thread
@@ -104,6 +141,9 @@ class LiveStatsController(_Base):
 
     def stop_stats(self) -> None:
         """Stop streaming entirely (app teardown)."""
+        if self._side_retarget_timer is not None:
+            self._side_retarget_timer.stop()
+            self._side_retarget_timer = None
         self._live.retarget_stats(None)
         self._stop_stats_stream()
         self._live.clear_top()

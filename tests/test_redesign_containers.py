@@ -9,6 +9,7 @@ from textual.widgets import DataTable, Static, TabbedContent
 
 from docksurf_py.core.models import (
     ContainerDetail,
+    ContainerStats,
     ContainerTop,
     DockerSnapshot,
     HealthProbe,
@@ -16,8 +17,14 @@ from docksurf_py.core.models import (
 )
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.app import DockSurfApp
-from docksurf_py.tui.ids import CHIP_BAR_ID, DETAIL_PANE_ID, EMPTY_STATE_IDS, TableID
-from docksurf_py.tui.widgets import ChipBar, DetailPane
+from docksurf_py.tui.ids import (
+    CHIP_BAR_ID,
+    DETAIL_PANE_ID,
+    EMPTY_STATE_IDS,
+    LIVE_PANEL_ID,
+    TableID,
+)
+from docksurf_py.tui.widgets import ChipBar, DetailPane, LivePanel
 from docksurf_py.tui.widgets.tables import ResourceTable
 from tests.test_app import MockDockerService, wait_until
 from tests.test_compose import make_container
@@ -313,3 +320,110 @@ class DetailCardTests(unittest.IsolatedAsyncioTestCase):
             pane = await self._select(app, pilot, "shop-web-1")
             await pilot.pause()
             self.assertIn("shop-web-1", str(pane.border_title))
+
+
+class _SampleStream:
+    """A stats stream that yields a couple of samples, then stops."""
+
+    def __iter__(self):
+        yield ContainerStats(
+            12.5, 10 * 1024 * 1024, 100 * 1024 * 1024, 10.0, 0, 0, 0, 0
+        )
+        yield ContainerStats(
+            25.0, 12 * 1024 * 1024, 100 * 1024 * 1024, 12.0, 4096, 1024, 0, 0
+        )
+
+    def stop(self) -> None:
+        pass
+
+
+class _IdleStream:
+    def __iter__(self):
+        return iter(())
+
+    def stop(self) -> None:
+        pass
+
+
+def _many_running() -> DockerSnapshot:
+    names = [f"c{i}" for i in range(8)]
+    return DockerSnapshot([make_container(n) for n in names], [], [], [])
+
+
+class LivePanelTests(unittest.IsolatedAsyncioTestCase):
+    async def test_panel_shows_sparklines_for_a_running_container(self) -> None:
+        snapshot = _card_snapshot()
+        svc = _card_service(snapshot)
+        svc.stream_stats = lambda cid: _SampleStream()  # type: ignore[method-assign]
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            table = await _ready(app, pilot)
+            table.move_cursor(row=2)  # shop-web-1
+            await wait_until(
+                lambda: app._live.stats_target == "shop-web-1", timeout=3.0
+            )
+            panel = app.query_one(f"#{LIVE_PANEL_ID}", LivePanel)
+            await wait_until(lambda: len(app._live.history.cpu) == 2, timeout=3.0)
+            await pilot.pause()
+            self.assertTrue(panel.display)
+            self.assertIn("live", str(panel.border_title))
+            console = Console(width=80, no_color=True, highlight=False)
+            with console.capture() as cap:
+                console.print(panel.content)
+            text = cap.get()
+            self.assertIn("25.0%", text)
+            self.assertIn("MEM", text)
+            self.assertIn("↓", text)
+
+    async def test_panel_is_hidden_for_stopped_containers_and_project_headers(
+        self,
+    ) -> None:
+        snapshot = _card_snapshot()
+        svc = _card_service(snapshot)
+        svc.stream_stats = lambda cid: _IdleStream()  # type: ignore[method-assign]
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            table = await _ready(app, pilot)
+            panel = app.query_one(f"#{LIVE_PANEL_ID}", LivePanel)
+            table.move_cursor(row=2)
+            await wait_until(lambda: panel.display, timeout=3.0)
+            table.move_cursor(row=1)  # shop-db-1, stopped
+            await wait_until(lambda: not panel.display, timeout=3.0)
+            self.assertIsNone(app._live.stats_target)
+            table.move_cursor(row=3)  # solo, running
+            await wait_until(lambda: panel.display, timeout=3.0)
+            table.move_cursor(row=0)  # the shop project header
+            await wait_until(lambda: not panel.display, timeout=3.0)
+
+    async def test_fast_cursor_moves_start_one_stats_stream(self) -> None:
+        started: list[str] = []
+        svc = MockDockerService(_many_running)
+
+        def stream_stats(cid: str):
+            started.append(cid)
+            return _IdleStream()
+
+        svc.stream_stats = stream_stats  # type: ignore[method-assign]
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            table = await _ready(app, pilot)
+            await wait_until(lambda: app._live.stats_target == "c0", timeout=3.0)
+            started.clear()
+            for _ in range(5):
+                await pilot.press("down")
+            self.assertEqual(table.cursor_row, 5)
+            self.assertEqual(started, [])  # still waiting for the cursor to settle
+            await wait_until(lambda: app._live.stats_target == "c5", timeout=3.0)
+            await pilot.pause(0.5)
+            self.assertEqual(started, ["c5"])
+
+    async def test_card_follows_the_cursor_immediately(self) -> None:
+        svc = MockDockerService(_many_running)
+        svc.stream_stats = lambda cid: _IdleStream()  # type: ignore[method-assign]
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await _ready(app, pilot)
+            await pilot.press("down", "down")
+            await pilot.pause()
+            pane = app.query_one(f"#{DETAIL_PANE_ID}", DetailPane)
+            self.assertIn("c2 · container", str(pane.border_title))

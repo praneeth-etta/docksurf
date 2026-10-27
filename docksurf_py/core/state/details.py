@@ -11,6 +11,7 @@ does the fetching, streaming and rendering.
 from typing import Any
 
 from docksurf_py.core.models import Container, ContainerDetail, ContainerTop
+from docksurf_py.core.state.stats import StatsHistory
 
 
 class DetailCache:
@@ -100,6 +101,8 @@ class LiveTargets:
 
     def __init__(self) -> None:
         self.stats_target: str | None = None
+        # Samples for `stats_target`; reset whenever the target changes.
+        self.history = StatsHistory()
         self.generation = 0
         self.top_target: str | None = None
         # The last process snapshot fetched for `top_target`, so the detail
@@ -118,6 +121,7 @@ class LiveTargets:
         if target == self.stats_target:
             return False
         self.stats_target = target
+        self.history.reset()
         return True
 
     def next_generation(self) -> int:

@@ -16,7 +16,7 @@ from docksurf_py.core.models import (
     DockerSnapshot,
     SystemDf,
 )
-from docksurf_py.core.render.observability import render_df, render_stats, render_top
+from docksurf_py.core.render.observability import render_df, render_top
 from docksurf_py.core.state.refresh import is_noise_event
 from docksurf_py.tui.app import DockSurfApp
 from docksurf_py.tui.widgets import SystemDfScreen
@@ -236,9 +236,7 @@ class CreateSdkClientContextTests(unittest.TestCase):
 
 
 class RenderSmokeTests(unittest.TestCase):
-    def test_render_stats_and_df_do_not_raise(self) -> None:
-        stats = ContainerStats(42.0, 100, 200, 50.0, 1, 2, 3, 4)
-        self.assertIsNotNone(render_stats(stats, "web"))
+    def test_render_df_does_not_raise(self) -> None:
         df = SystemDf(
             entries=[DiskUsageEntry("Images", 1, 0, 100, 100)],
             total_size=100,
@@ -472,7 +470,8 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
             await wait_until(lambda: app._live.top_target == "web", timeout=2.0)
 
             table.move_cursor(row=1)
-            await pilot.pause()
+            # The side state follows the cursor once it settles (debounced).
+            await wait_until(lambda: app._live.top_target is None, timeout=2.0)
             self.assertIsNone(app._live.top_target)
 
 

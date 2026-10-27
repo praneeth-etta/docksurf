@@ -64,6 +64,11 @@ BottomBar {
     height: 1fr;
 }
 
+/* Four rows of sparklines/gauge; hidden for rows that aren't running containers. */
+#side-column > #live-panel {
+    height: auto;
+}
+
 #list-toolbar {
     height: 1;
     margin-bottom: 1;

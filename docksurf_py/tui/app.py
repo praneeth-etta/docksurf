@@ -81,6 +81,7 @@ from docksurf_py.tui.ids import (
     FILTER_PLACEHOLDERS,
     LIST_PANEL_ID,
     LIST_TOOLBAR_ID,
+    LIVE_PANEL_ID,
     LOG_PANE_ID,
     MAIN_CONTAINER_ID,
     REFRESH_LOADING_ID,
@@ -110,6 +111,7 @@ from docksurf_py.tui.widgets import (
     DetailPane,
     HelpScreen,
     ImageTable,
+    LivePanel,
     LogPane,
     NetworkTable,
     SearchBar,
@@ -227,6 +229,9 @@ class AppContext(Protocol):
     ) -> None: ...
     def _sync_stats(self) -> None: ...
     def _sync_top(self) -> None: ...
+    def _sync_image_architecture(self) -> None: ...
+    def _retarget_side(self) -> None: ...
+    def _schedule_side_retarget(self) -> None: ...
     def _sync_container_detail(self) -> None: ...
     def _refresh_detail_card(self) -> None: ...
     def _get_focused_container(self) -> Container | None: ...
@@ -511,6 +516,7 @@ class DockSurfApp(
                         )
             with Vertical(id=SIDE_COLUMN_ID):
                 yield DetailPane(id=DETAIL_PANE_ID, classes="panel")
+                yield LivePanel(id=LIVE_PANEL_ID, classes="panel")
                 yield LogPane(
                     id=LOG_PANE_ID,
                     classes="panel",
@@ -589,10 +595,7 @@ class DockSurfApp(
         entry = self._resource_registry.get(active)
         if entry is None:
             pane.clear_details()
-            self._sync_stats()
-            self._sync_top()
-            self._sync_image_architecture()
-            self._sync_container_detail()
+            self._retarget_side()
             return
         table = self.query_one(f"#{entry.table_id}", DataTable)
         # Explicitly follow focus to the active tab's table (rather than
@@ -603,20 +606,14 @@ class DockSurfApp(
         current = self._tables.rows.get(active, [])
         if not current:
             pane.clear_details()
-            self._sync_stats()
-            self._sync_top()
-            self._sync_image_architecture()
-            self._sync_container_detail()
+            self._retarget_side()
             return
         table.move_cursor(row=0)
         try:
             entry.show_details(pane, 0)
         except IndexError:
             pane.clear_details()
-        self._sync_stats()
-        self._sync_top()
-        self._sync_image_architecture()
-        self._sync_container_detail()
+        self._retarget_side()
 
     @on(DataTable.RowHighlighted)
     def update_details(self, event: DataTable.RowHighlighted) -> None:
@@ -636,10 +633,9 @@ class DockSurfApp(
             entry.show_details(pane, event.cursor_row)
         except IndexError:
             pane.clear_details()
-        self._sync_stats()
-        self._sync_top()
-        self._sync_image_architecture()
-        self._sync_container_detail()
+        # The card is cheap and drawn at once; the streams and fetches follow
+        # the cursor only once it settles (holding `↓` starts one, not fifty).
+        self._schedule_side_retarget()
         self._repaint_bottom_bar()
 
     @on(TabbedContent.TabActivated)

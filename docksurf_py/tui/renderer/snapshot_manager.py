@@ -155,9 +155,7 @@ class SnapshotManager(_Base):
                 entry.show_details(pane, idx)
             except IndexError:
                 pane.clear_details()
-            self._sync_stats()
-            self._sync_top()
-            self._sync_container_detail()
+            self._retarget_side()
 
     def _maybe_notify_connection_change(self, state: ConnectionState) -> None:
         """UI-thread only — call via `call_from_thread` from a worker.

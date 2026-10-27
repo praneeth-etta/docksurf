@@ -18,6 +18,7 @@ from docksurf_py.tui.widgets.dialogs import ConfirmDialog, PromptField, PromptSc
 from docksurf_py.tui.widgets.help_screen import HelpScreen
 from docksurf_py.tui.widgets.inspect_screen import InspectScreen
 from docksurf_py.tui.widgets.layer_history_screen import LayerHistoryScreen
+from docksurf_py.tui.widgets.live_panel import LivePanel
 from docksurf_py.tui.widgets.log_pane import (
     LogOptionsScreen,
     LogPane,
@@ -47,6 +48,7 @@ __all__ = [
     "PromptField",
     "PromptScreen",
     "LogSource",
+    "LivePanel",
     "LogPane",
     "SelectableRichLog",
     "LogOptionsScreen",

@@ -49,6 +49,7 @@ BTN_PICKER_CANCEL_ID = "picker-cancel"
 BTN_PRUNE_CANCEL_ID = "prune-cancel"
 
 DETAIL_PANE_ID = "detail-pane"
+LIVE_PANEL_ID = "live-panel"
 SEARCH_BAR_ID = "search-bar"
 TOP_BAR_ID = "top-bar"
 BOTTOM_BAR_ID = "bottom-bar"

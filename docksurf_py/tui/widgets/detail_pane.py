@@ -19,15 +19,13 @@ class DetailPane(VerticalScroll):
     keep their open/closed state across re-renders of the same card. The other
     tabs still use `update_details` until they move to cards too.
 
-    The `_stats_panel` and `_topology_panel` regions show live resource usage
-    and the network-topology diagram for the selected item; each updates
-    independently of the body so neither resets the other or the
-    collapsibles. All renderables are built by the controller, keeping this
-    widget display-only (no Docker imports).
+    The `_topology_panel` region shows the network-topology diagram for the
+    selected item and updates independently of the body, so it never resets
+    the collapsibles. All renderables are built by the controller, keeping
+    this widget display-only (no Docker imports).
     """
 
     _panel: Static
-    _stats_panel: Static
     _topology_panel: Static
     _env_collapsible: "Collapsible | None" = None
     _health_collapsible: "Collapsible | None" = None
@@ -42,8 +40,6 @@ class DetailPane(VerticalScroll):
     def compose(self) -> ComposeResult:
         self._panel = Static("Select an item to view details.", classes="muted")
         yield self._panel
-        self._stats_panel = Static("")
-        yield self._stats_panel
         self._topology_panel = Static("")
         yield self._topology_panel
 
@@ -52,12 +48,6 @@ class DetailPane(VerticalScroll):
 
     def clear_topology(self) -> None:
         self._topology_panel.update("")
-
-    def update_live_stats(self, content) -> None:
-        self._stats_panel.update(content)
-
-    def clear_live_stats(self) -> None:
-        self._stats_panel.update("")
 
     # --- Cards ---------------------------------------------------------------
 
@@ -106,8 +96,7 @@ class DetailPane(VerticalScroll):
             self._section_bodies[section.key] = body
             existing = Collapsible(body, title=title, collapsed=True)
             self._sections[section.key] = existing
-            # Above the live-stats region (until it moves to its own panel).
-            self.mount(existing, before=self._stats_panel)
+            self.mount(existing, before=self._topology_panel)
         else:
             existing.title = title
         if section.content is not None:
@@ -198,7 +187,6 @@ class DetailPane(VerticalScroll):
         self.border_title = ""
         self._leave_card()
         self._panel.update("Select an item to view details.")
-        self._stats_panel.update("")
         self._topology_panel.update("")
         if self._env_collapsible is not None:
             self._env_collapsible.remove()
