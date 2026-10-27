@@ -81,10 +81,15 @@ class LiveStatsController(_Base):
         self._sync_top()
         self._sync_image_architecture()
         self._sync_container_detail()
+        self._sync_side_logs()
 
     def _sync_stats(self) -> None:
         item = None
-        if self.query_one(TabbedContent).active == TabID.CONTAINERS:
+        # No stream while the side column is hidden (`z`): nothing shows it.
+        if (
+            self.query_one(TabbedContent).active == TabID.CONTAINERS
+            and not self._view.side_hidden
+        ):
             item = self._get_focused_resource(TabID.CONTAINERS)
         target = self._live.stats_target_for(item)
         if not self._live.retarget_stats(target):
@@ -96,7 +101,7 @@ class LiveStatsController(_Base):
             panel.clear_live()
             panel.display = False
             return
-        panel.display = True
+        panel.display = not self._view.logs_full
         panel.show_message(fg(self._view.palette, "muted", "collecting stats…"))
         assert isinstance(item, Container)
         self._start_stats_stream(target, item.name)

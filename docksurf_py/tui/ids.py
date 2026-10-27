@@ -14,10 +14,7 @@ class TableID(StrEnum):
 # Generic widget IDs
 LOG_PANE_ID = "log-pane"
 LOG_PANE_VIEW_ID = "log-pane-view"
-LOG_PANE_HEADER_ID = "log-pane-header"
-LOG_PANE_TOOLBAR_ID = "log-pane-toolbar"
 LOG_PANE_SEARCH_ID = "log-pane-search"
-BTN_EXPAND_ID = "expand-btn"
 
 # LogOptionsScreen widget IDs
 LOG_OPTIONS_TAIL_ID = "log-options-tail"

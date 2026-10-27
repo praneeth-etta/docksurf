@@ -10,7 +10,12 @@ does the fetching, streaming and rendering.
 
 from typing import Any
 
-from docksurf_py.core.models import Container, ContainerDetail, ContainerTop
+from docksurf_py.core.models import (
+    ComposeProject,
+    Container,
+    ContainerDetail,
+    ContainerTop,
+)
 from docksurf_py.core.state.stats import StatsHistory
 
 
@@ -93,7 +98,7 @@ class DetailCache:
 
 
 class LiveTargets:
-    """Which container the stats stream and the `top` panel follow.
+    """Which container the stats stream, the `top` panel and the side logs follow.
 
     `generation` invalidates superseded stats streams: every (re)start or stop
     bumps it, and a sample is only shown if it carries the current one.
@@ -103,6 +108,9 @@ class LiveTargets:
         self.stats_target: str | None = None
         # Samples for `stats_target`; reset whenever the target changes.
         self.history = StatsHistory()
+        # What the side log panel shows: a container id, `project:<name>` for a
+        # Compose header row, or None. Reloaded only when this changes.
+        self.log_target: str | None = None
         self.generation = 0
         self.top_target: str | None = None
         # The last process snapshot fetched for `top_target`, so the detail
@@ -130,6 +138,25 @@ class LiveTargets:
 
     def is_current(self, generation: int) -> bool:
         return generation == self.generation
+
+    # --- Side logs -----------------------------------------------------------
+
+    @staticmethod
+    def log_target_for(item: Any) -> str | None:
+        """Logs follow any focused container (a stopped one just loads its last
+        lines) and a Compose header row's whole project."""
+        if isinstance(item, Container):
+            return item.id
+        if isinstance(item, ComposeProject):
+            return f"project:{item.name}"
+        return None
+
+    def retarget_logs(self, target: str | None) -> bool:
+        """Point the side logs at `target`; False if they already were (no reload)."""
+        if target == self.log_target:
+            return False
+        self.log_target = target
+        return True
 
     # --- Process list (`t`) --------------------------------------------------
 

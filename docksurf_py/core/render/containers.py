@@ -6,11 +6,9 @@ from pathlib import Path
 
 from rich.markup import escape
 
-from docksurf_py.core.docker import format_size
 from docksurf_py.core.models import (
     ComposeProject,
     Container,
-    ContainerStats,
     PortBinding,
 )
 from docksurf_py.core.render.markup import (
@@ -22,9 +20,8 @@ from docksurf_py.core.render.markup import (
 from docksurf_py.core.render.palette import Palette, fg
 from docksurf_py.core.types import SafeMarkup
 
-# Content widths of the fixed-width columns.
+# Content width of the NAME column.
 NAME_WIDTH = 27
-GAUGE_WIDTH = 15
 
 _DEFAULT_COMPOSE_FILES = frozenset(
     {"compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"}
@@ -144,28 +141,13 @@ def gauge(percent: float, width: int, p: Palette, role: str, label: str) -> Safe
     return SafeMarkup(f"{bar} {escape(label)}")
 
 
-def _stats_cells(
-    stats: ContainerStats | None, p: Palette
-) -> tuple[SafeMarkup, SafeMarkup]:
-    if stats is None:
-        return _dash(p), _dash(p)
-    cpu = gauge(
-        stats.cpu_percent, GAUGE_WIDTH, p, "accent", f"{stats.cpu_percent:.0f}%"
-    )
-    mem = gauge(
-        stats.mem_percent, GAUGE_WIDTH, p, "primary", format_size(stats.mem_used)
-    )
-    return cpu, mem
-
-
 def container_row_cells(
     c: Container,
     *,
     branch: str | None,
     p: Palette,
-    stats: ContainerStats | None = None,
 ) -> tuple[SafeMarkup, ...]:
-    """The seven non-gutter cells: name, state, uptime, ports, cpu, mem, image.
+    """The five non-gutter cells: name, state, uptime, ports, image.
     `branch` is the tree connector (`├─`/`└─`) for a Compose service row."""
     prefix = fg(p, "faint", branch) + " " if branch else ""
     label = truncate(
@@ -174,27 +156,22 @@ def container_row_cells(
     )
     name = SafeMarkup(f"{prefix}{state_glyph(c, p)} {escape(label)}")
     ports = compact_ports(c.ports)
-    cpu, mem = _stats_cells(stats if c.running else None, p)
     return (
         name,
         state_cell(c, p),
         fg(p, "muted", compact_age(c.status, c.uptime_hint)),
         fg(p, "muted" if ports != _NO_VALUE else "faint", ports),
-        cpu,
-        mem,
         fg(p, "muted", c.image_name),
     )
 
 
 def project_row_cells(project: ComposeProject, p: Palette) -> tuple[SafeMarkup, ...]:
-    """Seven cells for a Compose header row. The collapse chevron is the
+    """Five cells for a Compose header row. The collapse chevron is the
     gutter's job (`chevron`)."""
     blank = SafeMarkup("")
     return (
         SafeMarkup(f"[bold {p.strong}]{escape(truncate(project.name, NAME_WIDTH))}[/]"),
         rollup_dots(project.containers, p),
-        blank,
-        blank,
         blank,
         blank,
         fg(p, "muted", project_location(project)),

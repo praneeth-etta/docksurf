@@ -56,6 +56,10 @@ class SelectionHandler(_Base):
             table.move_cursor(row=row + 1)
 
     def action_clear_marks(self) -> None:
+        # In full-view logs, Esc leaves the view before it clears any marks.
+        if self._view.logs_full:
+            self._exit_logs_full()
+            return
         active = self.query_one(TabbedContent).active
         if not self._tables.clear_marks(active):
             return

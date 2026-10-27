@@ -1,4 +1,4 @@
-"""LogPane — inline log viewer, plus LogOptionsScreen for tail/since picking."""
+"""LogPane — the side-column log panel, plus LogOptionsScreen for tail/since picking."""
 
 import threading
 from typing import Callable, Iterator, Protocol
@@ -6,10 +6,10 @@ from typing import Callable, Iterator, Protocol
 from rich.cells import cell_len
 from rich.markup import escape
 from rich.style import Style
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.message import Message
 from textual.screen import ModalScreen
 from textual.selection import Selection
 from textual.strip import Strip
@@ -20,14 +20,11 @@ from textual.widgets import Button, Input, Label, RichLog, Select
 from docksurf_py.core.state.logs import LogBuffer
 from docksurf_py.core.types import LogLine, LogOptions
 from docksurf_py.tui.ids import (
-    BTN_EXPAND_ID,
     BTN_LOG_OPTIONS_CANCEL_ID,
     BTN_LOG_OPTIONS_OK_ID,
     LOG_OPTIONS_SINCE_ID,
     LOG_OPTIONS_TAIL_ID,
-    LOG_PANE_HEADER_ID,
     LOG_PANE_SEARCH_ID,
-    LOG_PANE_TOOLBAR_ID,
     LOG_PANE_VIEW_ID,
 )
 
@@ -137,10 +134,8 @@ class SelectableRichLog(RichLog):
 
 
 class LogPane(Widget):
-    """Inline log viewer that lives in the right panel, expandable to full width."""
-
-    class ToggleExpand(Message):
-        """Posted when the user clicks the expand/collapse button."""
+    """The side column's log panel: follows the focused row, and `l` expands it
+    to full view. The source, stream state and filter show on the panel border."""
 
     def __init__(self, default_options: LogOptions | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -169,29 +164,35 @@ class LogPane(Widget):
         self._wrap = False
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id=LOG_PANE_TOOLBAR_ID):
-            yield Label("", id=LOG_PANE_HEADER_ID)
-            yield Button("⛶ Expand", id=BTN_EXPAND_ID)
         yield Input(placeholder="Filter logs... (Esc to clear)", id=LOG_PANE_SEARCH_ID)
         yield SelectableRichLog(id=LOG_PANE_VIEW_ID, markup=True, highlight=False)
 
     def on_mount(self) -> None:
         self.query_one(f"#{LOG_PANE_SEARCH_ID}", Input).display = False
         self._log_view = self.query_one(f"#{LOG_PANE_VIEW_ID}", RichLog)
-
-    @on(Button.Pressed, f"#{BTN_EXPAND_ID}")
-    def _on_expand_pressed(self) -> None:
-        self.post_message(self.ToggleExpand())
+        self._update_header()
 
     def set_expanded(self, expanded: bool) -> None:
         self._expanded = expanded
-        btn = self.query_one(f"#{BTN_EXPAND_ID}", Button)
-        if expanded:
-            self.add_class("expanded")
-            btn.label = "⊡ Collapse"
-        else:
-            self.remove_class("expanded")
-            btn.label = "⛶ Expand"
+        self.set_class(expanded, "expanded")
+        self._update_header()
+
+    def focus_view(self) -> None:
+        """Give the log view keyboard focus (so `/` filters the logs)."""
+        self._view.focus()
+
+    def unload(self) -> None:
+        """Stop following and empty the panel (the focus left what it showed)."""
+        self.stop_follow()
+        self._container_id = ""
+        self._container_name = ""
+        self._stream_factory = None
+        self._buffer.reset(keep_filter=False)
+        search_bar = self.query_one(f"#{LOG_PANE_SEARCH_ID}", Input)
+        search_bar.value = ""
+        search_bar.display = False
+        self._view.clear()
+        self._update_header()
 
     @property
     def log_title(self) -> str:
@@ -225,15 +226,25 @@ class LogPane(Widget):
         self._update_header()
 
     def _update_header(self) -> None:
-        filter_hint = self._buffer.filter_hint()
-        if self._following and self._paused:
-            state = "  |  [bold yellow][PAUSED][/]"
-        elif self._following:
-            state = "  |  [bold green][FOLLOWING][/]"
+        """Title: `logs · web · following`; subtitle: the keys that apply."""
+        if not self._container_name:
+            title = "logs"
         else:
-            state = "  |  [dim]stream ended[/]  |  l to close"
-        self.query_one(f"#{LOG_PANE_HEADER_ID}", Label).update(
-            f"Logs: {escape(self._container_name)}{state}{filter_hint}"
+            if self._following and self._paused:
+                state = "[b]paused[/]"
+            elif self._following:
+                state = "following"
+            else:
+                state = "[dim]ended[/]"
+            title = (
+                f"logs · {escape(self._container_name)} · {state}"
+                f"{self._buffer.filter_hint()}"
+            )
+        self.border_title = Text.from_markup(title)
+        self.border_subtitle = (
+            "l back · f follow · / search"
+            if self._expanded
+            else "l full view · f follow · / search"
         )
 
     def toggle_follow(self) -> None:

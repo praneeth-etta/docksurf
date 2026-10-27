@@ -2,7 +2,7 @@
 
 import unittest
 
-from docksurf_py.core.models import ComposeProject, ContainerStats, PortBinding
+from docksurf_py.core.models import ComposeProject, PortBinding
 from docksurf_py.core.render.containers import (
     age_seconds,
     chevron,
@@ -16,19 +16,6 @@ from docksurf_py.core.render.containers import (
 )
 from docksurf_py.core.render.palette import TIDE_PALETTE as P
 from tests.test_compose import make_container
-
-
-def _stats(cpu: float = 12.0, mem: int = 5 * 1024 * 1024, mem_pct: float = 50.0):
-    return ContainerStats(
-        cpu_percent=cpu,
-        mem_used=mem,
-        mem_limit=mem * 2,
-        mem_percent=mem_pct,
-        net_rx=0,
-        net_tx=0,
-        blk_read=0,
-        blk_write=0,
-    )
 
 
 class CompactAgeTests(unittest.TestCase):
@@ -136,7 +123,7 @@ class RowCellsTests(unittest.TestCase):
         c = make_container("proj-web-1", project="proj", service="web")
         c.status = "Up 3 hours"
         cells = container_row_cells(c, branch="├─", p=P)
-        self.assertEqual(len(cells), 7)
+        self.assertEqual(len(cells), 5)
         self.assertIn("web", cells[0])
         self.assertNotIn("proj-web-1", cells[0])
         self.assertIn("├─", cells[0])
@@ -146,22 +133,6 @@ class RowCellsTests(unittest.TestCase):
         cells = container_row_cells(make_container("solo"), branch=None, p=P)
         self.assertIn("solo", cells[0])
 
-    def test_stats_dashes_without_samples_or_when_stopped(self) -> None:
-        running = container_row_cells(make_container("a"), branch=None, p=P)
-        self.assertIn("—", running[4])
-        stopped = container_row_cells(
-            make_container("b", running=False), branch=None, p=P, stats=_stats()
-        )
-        self.assertIn("—", stopped[4])
-        self.assertIn("—", stopped[5])
-
-    def test_stats_gauges(self) -> None:
-        cells = container_row_cells(
-            make_container("a"), branch=None, p=P, stats=_stats(cpu=12)
-        )
-        self.assertIn("12%", cells[4])
-        self.assertIn("5.00MB", cells[5])
-
     def test_markup_in_names_is_escaped(self) -> None:
         cells = container_row_cells(make_container("[red]x"), branch=None, p=P)
         self.assertIn("\\[red]x", cells[0])
@@ -170,10 +141,10 @@ class RowCellsTests(unittest.TestCase):
         a = make_container("a", project="p", service="a", working_dir="/srv/p")
         b = make_container("b", running=False, project="p", service="b")
         cells = project_row_cells(ComposeProject("p", [a, b], "", "/srv/p"), P)
-        self.assertEqual(len(cells), 7)
+        self.assertEqual(len(cells), 5)
         self.assertIn("p", cells[0])
         self.assertIn("1/2 up", cells[1])
-        self.assertIn("/srv/p", cells[6])
+        self.assertIn("/srv/p", cells[4])
 
     def test_chevron(self) -> None:
         self.assertIn("▸", chevron(True, P))

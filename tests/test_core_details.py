@@ -84,6 +84,27 @@ class LiveTargetsTests(unittest.TestCase):
         self.assertFalse(live.retarget_stats("web"))
         self.assertTrue(live.retarget_stats(None))
 
+    def test_log_target_for_containers_and_projects(self) -> None:
+        self.assertEqual(LiveTargets.log_target_for(make_container("web")), "web")
+        # A stopped container still loads its last lines.
+        self.assertEqual(
+            LiveTargets.log_target_for(make_container("db", running=False)), "db"
+        )
+        header = ComposeProject(
+            name="shop", containers=[], config_files="", working_dir=""
+        )
+        self.assertEqual(LiveTargets.log_target_for(header), "project:shop")
+        self.assertIsNone(LiveTargets.log_target_for(None))
+        self.assertIsNone(LiveTargets.log_target_for(object()))
+
+    def test_retarget_logs_only_on_change(self) -> None:
+        live = LiveTargets()
+        self.assertTrue(live.retarget_logs("web"))
+        self.assertFalse(live.retarget_logs("web"))
+        self.assertTrue(live.retarget_logs("project:shop"))
+        self.assertTrue(live.retarget_logs(None))
+        self.assertFalse(live.retarget_logs(None))
+
     def test_generation_invalidates_older_streams(self) -> None:
         live = LiveTargets()
         first = live.next_generation()

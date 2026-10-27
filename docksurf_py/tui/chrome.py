@@ -57,6 +57,16 @@ class ChromeController(_Base):
         self._repaint_bottom_bar()
         self._repaint_list_panel()
 
+    def action_toggle_side(self) -> None:
+        """`z`: hide or show the side column, so the list takes the full width.
+        The streams that only the side column shows stop while it is hidden."""
+        if self._view.logs_full:
+            return  # full-view logs fill the screen; `l` or Esc leaves them
+        self._view.toggle_side()
+        self._sync_log_layout()
+        self._retarget_side()
+        self._repaint_chrome()
+
     def _repaint_top_bar(self) -> None:
         if not self.is_running:
             return

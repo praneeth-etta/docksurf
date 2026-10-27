@@ -86,28 +86,24 @@ class LoadConfigTests(unittest.TestCase):
 
     def test_ui_defaults(self) -> None:
         config = Config()
-        self.assertFalse(config.row_stats)
-        self.assertEqual(config.row_stats_max, 20)
         self.assertTrue(config.side_logs)
 
     def test_ui_section_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.toml"
-            path.write_text(
-                "[ui]\nrow_stats = true\nrow_stats_max = 5\nside_logs = false\n"
-            )
+            path.write_text("[ui]\nside_logs = false\n")
             config = load_config(path)
-            self.assertTrue(config.row_stats)
-            self.assertEqual(config.row_stats_max, 5)
             self.assertFalse(config.side_logs)
+
+    def test_removed_row_stats_keys_in_an_old_file_are_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text("[ui]\nrow_stats = true\nrow_stats_max = 5\n")
+            self.assertEqual(load_config(path), Config())
 
     def test_bad_ui_values_fall_back_to_defaults(self) -> None:
         for body in (
-            'row_stats = "yes"',
-            "row_stats_max = 0",
-            "row_stats_max = -3",
-            "row_stats_max = true",
-            'row_stats_max = "ten"',
+            'side_logs = "yes"',
             "side_logs = 1",
         ):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:

@@ -36,10 +36,6 @@ rebuild = true
 prune = true
 
 [ui]
-# Live CPU/MEM gauges on every running container row (one stats stream each).
-row_stats = false
-# Upper bound on concurrent per-row stats streams when row_stats is on.
-row_stats_max = 20
 # Stream logs for the selected container in the side panel (wide layout).
 side_logs = true
 """
@@ -56,8 +52,6 @@ class Config:
     confirm_compose_down: bool = True
     confirm_rebuild: bool = True
     confirm_prune: bool = True
-    row_stats: bool = False
-    row_stats_max: int = 20
     side_logs: bool = True
 
 
@@ -65,15 +59,6 @@ def _coerce_bool(raw: object, default: bool, key: str) -> bool:
     if isinstance(raw, bool):
         return raw
     logger.warning("config: %s must be true/false, got %r — using default", key, raw)
-    return default
-
-
-def _coerce_positive_int(raw: object, default: int, key: str) -> int:
-    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
-        return raw
-    logger.warning(
-        "config: %s must be a positive integer, got %r — using default", key, raw
-    )
     return default
 
 
@@ -172,14 +157,6 @@ def load_config(path: Path | None = None) -> Config:
             confirm.get("prune", defaults.confirm_prune),
             defaults.confirm_prune,
             "confirm.prune",
-        ),
-        row_stats=_coerce_bool(
-            ui.get("row_stats", defaults.row_stats), defaults.row_stats, "ui.row_stats"
-        ),
-        row_stats_max=_coerce_positive_int(
-            ui.get("row_stats_max", defaults.row_stats_max),
-            defaults.row_stats_max,
-            "ui.row_stats_max",
         ),
         side_logs=_coerce_bool(
             ui.get("side_logs", defaults.side_logs), defaults.side_logs, "ui.side_logs"

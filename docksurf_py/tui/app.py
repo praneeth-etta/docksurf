@@ -34,7 +34,7 @@ from docksurf_py.core.models import (
     DockerSnapshot,
 )
 from docksurf_py.core.paths import DATA_DIR
-from docksurf_py.core.render.containers import GAUGE_WIDTH, NAME_WIDTH, age_seconds
+from docksurf_py.core.render.containers import NAME_WIDTH, age_seconds
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.session import SessionState, load_session, save_session
 from docksurf_py.core.state.details import DetailCache, LiveTargets
@@ -230,6 +230,9 @@ class AppContext(Protocol):
     def _sync_stats(self) -> None: ...
     def _sync_top(self) -> None: ...
     def _sync_image_architecture(self) -> None: ...
+    def _sync_side_logs(self) -> None: ...
+    def _sync_log_layout(self) -> None: ...
+    def _exit_logs_full(self) -> None: ...
     def _retarget_side(self) -> None: ...
     def _schedule_side_retarget(self) -> None: ...
     def _sync_container_detail(self) -> None: ...
@@ -325,11 +328,11 @@ class DockSurfApp(
         Binding("E", "exec_custom", "Exec (custom)", show=False),
         ("i", "inspect", "Inspect"),
         ("d", "delete", "Delete"),
-        Binding("l", "view_logs", "Logs", show=False),
+        Binding("l", "view_logs", "Full-view logs", show=False),
         Binding("f", "follow_logs", "Pause/Resume", show=False),
         Binding("c", "clear_logs", "Clear", show=False),
         Binding("C", "copy_files", "Copy files", show=False),
-        Binding("z", "toggle_log_expand", "Expand Logs", show=False),
+        Binding("z", "toggle_side", "Toggle side panels", show=False),
         Binding("o", "log_options", "Log options", show=False),
         Binding("T", "toggle_timestamps", "Toggle timestamps", show=False),
         Binding("W", "toggle_log_wrap", "Toggle wrap", show=False),
@@ -409,7 +412,7 @@ class DockSurfApp(
                     chips=CONTAINER_CHIPS,
                 ),
                 table_id=TableID.CONTAINERS,
-                columns=("Name", "State", "Uptime", "Ports", "CPU", "Mem", "Image"),
+                columns=("Name", "State", "Uptime", "Ports", "Image"),
                 populate=self._populate_container_table,
                 show_details=self._show_container_details,
                 column_widths={
@@ -417,8 +420,6 @@ class DockSurfApp(
                     "State": 16,
                     "Uptime": 9,
                     "Ports": 17,
-                    "CPU": GAUGE_WIDTH,
-                    "Mem": GAUGE_WIDTH,
                 },
                 cursor_gutter=True,
             ),
@@ -550,6 +551,7 @@ class DockSurfApp(
         # Any connection failure is surfaced from SnapshotManager once that
         # first fetch comes back.
         self.setup_tables()
+        self._sync_log_layout()
         self._repaint_chrome()
         self.start_refresh()
         # Live: react to `docker events` so the tables stay current without `r`.
@@ -558,6 +560,9 @@ class DockSurfApp(
     def on_unmount(self) -> None:
         self.stop_event_listener()
         self.stop_stats()
+        if self._search_filter_timer is not None:
+            self._search_filter_timer.stop()
+            self._search_filter_timer = None
 
     def action_refresh(self) -> None:
         self.start_refresh()
@@ -640,9 +645,12 @@ class DockSurfApp(
 
     @on(TabbedContent.TabActivated)
     def clear_on_tab_switch(self) -> None:
+        if not self.is_running:
+            return  # a queued activation dispatched during teardown
         active = self.query_one(TabbedContent).active
         if self._tables.is_dirty(active):
             self._populate_tab(active)
+        self._sync_log_layout()
         self._auto_select_first()
         self._repaint_chrome()
         if self._persist_session:
@@ -675,10 +683,6 @@ class DockSurfApp(
     @on(SearchBar.Dismissed)
     def _on_search_dismissed(self) -> None:
         self.on_search_escape()
-
-    @on(LogPane.ToggleExpand)
-    def _on_log_pane_toggle_expand(self) -> None:
-        self.action_toggle_log_expand()
 
     def action_new_resource(self) -> None:
         """`+`: create/pull on whichever non-container tab is active."""

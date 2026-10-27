@@ -15,6 +15,7 @@ from textual.widgets import DataTable, TabbedContent
 from docksurf_py.core.models import (
     CommandErrorKind,
     CommandResult,
+    ComposeProject,
     Container,
     ContainerDetail,
     PortBinding,
@@ -32,8 +33,14 @@ from docksurf_py.core.state.ops import (
 )
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import LogOptions, TabID
-from docksurf_py.tui.actions.common import _PROJECT_HINT, _Base
-from docksurf_py.tui.ids import DETAIL_PANE_ID, LIST_PANEL_ID, LOG_PANE_ID
+from docksurf_py.tui.actions.common import _Base
+from docksurf_py.tui.ids import (
+    DETAIL_PANE_ID,
+    LIST_PANEL_ID,
+    LIVE_PANEL_ID,
+    LOG_PANE_ID,
+    SIDE_COLUMN_ID,
+)
 from docksurf_py.tui.widgets import (
     ContainerPickerScreen,
     DetailPane,
@@ -457,44 +464,109 @@ class ContainerActionHandler(_Base):
             logger.warning("Copy failed: %s", result.message)
             self.notify(f"Error: {result.message}", severity="error")
 
-    def action_view_logs(self) -> None:
+    # --- Side logs and full view -------------------------------------------------
+    #
+    # The log pane is a permanent panel in the side column on the Containers tab
+    # (when `[ui] side_logs` is on) that follows the focused row. `l` expands it
+    # to a full view (`ViewState.logs_full`); with `side_logs` off it is hidden
+    # until then.
+
+    def _logs_wanted(self) -> bool:
+        """Whether the log panel should be showing on the current tab: always in
+        full view, otherwise as the side panel unless `z` hid the side column."""
+        if self.query_one(TabbedContent).active != TabID.CONTAINERS:
+            return False
+        if self._view.logs_full:
+            return True
+        return self.config.side_logs and not self._view.side_hidden
+
+    def _sync_log_layout(self) -> None:
+        """Show/hide the log panel and the panels around it for the current
+        tab and full-view state. Leaving the Containers tab ends full view (the
+        tab strip it hides is what you would switch with)."""
+        if self.query_one(TabbedContent).active != TabID.CONTAINERS:
+            self._view.logs_full = False
+        full = self._view.logs_full
         log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
-        if log_pane.display:
-            self.action_close_logs()
+        log_pane.display = self._logs_wanted()
+        log_pane.set_expanded(full)
+        self.query_one(f"#{SIDE_COLUMN_ID}").set_class(full, "logs-full")
+        self.query_one(f"#{LIST_PANEL_ID}").display = not full
+        # `z` hides the whole side column, but full-view logs live in it.
+        self.query_one(f"#{SIDE_COLUMN_ID}").display = (
+            full or not self._view.side_hidden
+        )
+        self.query_one(f"#{DETAIL_PANE_ID}").display = not full
+        # The live panel follows the stats target, except in full view.
+        self.query_one(f"#{LIVE_PANEL_ID}").display = (
+            not full and self._live.stats_target is not None
+        )
+
+    def _sync_side_logs(self) -> None:
+        """Point the log panel at the focused row. Idempotent: it only reloads
+        when the target changes (called from the debounced `_retarget_side`)."""
+        item = None
+        if self._logs_wanted():
+            item = self._get_focused_resource(TabID.CONTAINERS)
+        target = self._live.log_target_for(item)
+        if not self._live.retarget_logs(target):
             return
-        # On a project header, open interleaved logs across the whole project.
-        if self._focused_is_project_header():
-            self._open_project_logs(log_pane)
+        log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
+        if isinstance(item, ComposeProject):
+            self._load_project_logs(log_pane, item)
+        elif isinstance(item, Container):
+            logger.info("Following logs for container %s (%s)", item.name, item.id)
+            log_pane.load(item.id, item.name, self.docker.stream_logs)
+        else:
+            log_pane.unload()
+
+    def action_view_logs(self) -> None:
+        """`l`: toggle the full-view logs."""
+        if self._view.logs_full:
+            self._exit_logs_full()
             return
-        c = self._get_focused_container()
-        if c is None:
+        if self.query_one(TabbedContent).active != TabID.CONTAINERS or not isinstance(
+            self._get_focused_resource(TabID.CONTAINERS), (Container, ComposeProject)
+        ):
             self.notify(self._CONTAINER_TAB_HINT, severity="warning")
             return
-        self._open_container_logs(c.id, c.name)
+        self._view.toggle_logs_full()
+        self._sync_log_layout()
+        self._sync_side_logs()  # with side logs off nothing is loaded yet
+        self.query_one(f"#{LOG_PANE_ID}", LogPane).focus_view()
+        self._repaint_chrome()
+
+    def _exit_logs_full(self) -> None:
+        """Leave full view (`l` again, or `Esc`) and hand focus back to the list."""
+        if not self._view.logs_full:
+            return
+        self._view.toggle_logs_full()
+        self._sync_log_layout()
+        self._sync_side_logs()  # with side logs off this unloads the panel
+        entry = self._resource_registry[TabID.CONTAINERS]
+        self.query_one(f"#{entry.table_id}", DataTable).focus()
+        self._repaint_chrome()
 
     def _open_container_logs(self, key: str, name: str) -> None:
-        """Open the log pane for one container, streaming `docker logs`.
+        """Show one container's logs by `key` (what `stream_logs` is handed).
 
-        `key` is the container reference handed to `stream_logs`, an id for the
-        `l` key (canonical, the focused container is live), or a Compose
-        container *name* for the post-rebuild flow, where the id has changed but
-        `docker logs <name>` resolves the freshly-recreated container. `name` is
-        the label shown in the pane header.
+        The post-rebuild flow passes the Compose container *name*: the id has
+        changed, but `docker logs <name>` resolves the recreated container. `name`
+        is the label on the panel. With side logs off this opens full view.
         """
         log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
         logger.info("Opening log pane for container %s (%s)", name, key)
+        if not log_pane.display:
+            self._view.logs_full = True
+            self._sync_log_layout()
+            self._repaint_chrome()
+        self._live.retarget_logs(key)
         log_pane.load(key, name, self.docker.stream_logs)
-        self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).display = False
-        log_pane.display = True
 
-    def _open_project_logs(self, log_pane: LogPane) -> None:
-        project = self._get_focused_project()
-        if project is None:
-            self.notify(_PROJECT_HINT, severity="warning")
-            return
+    def _load_project_logs(self, log_pane: LogPane, project: ComposeProject) -> None:
         specs = [(c.compose_service or c.name, c.id) for c in project.containers]
         logger.info(
-            "Opening aggregated logs for project %s (%d containers)",
+            "Following aggregated logs for project %s (%d containers)",
             project.name,
             len(specs),
         )
@@ -503,30 +575,12 @@ class ContainerActionHandler(_Base):
             f"project: {project.name}",
             lambda _key, opts: self.docker.stream_project_logs(specs, opts),
         )
-        self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).display = False
-        log_pane.display = True
-
-    def action_close_logs(self) -> None:
-        log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
-        if not log_pane.display:
-            return
-        log_pane.stop_follow()
-        if log_pane.has_class("expanded"):
-            self._set_log_expanded(log_pane, False)
-        log_pane.display = False
-        self.query_one(f"#{DETAIL_PANE_ID}", DetailPane).display = True
 
     def action_follow_logs(self) -> None:
         log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
         if not log_pane.display:
             return
         log_pane.toggle_follow()
-
-    def action_toggle_log_expand(self) -> None:
-        log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
-        if not log_pane.display:
-            return
-        self._set_log_expanded(log_pane, not log_pane.has_class("expanded"))
 
     def action_clear_logs(self) -> None:
         log_pane = self.query_one(f"#{LOG_PANE_ID}", LogPane)
@@ -599,10 +653,6 @@ class ContainerActionHandler(_Base):
                 log_pane.set_options(options)
 
         self.push_screen(LogOptionsScreen(log_pane.options), _apply)
-
-    def _set_log_expanded(self, log_pane: LogPane, expanded: bool) -> None:
-        self.query_one(f"#{LIST_PANEL_ID}").display = not expanded
-        log_pane.set_expanded(expanded)
 
     @work
     async def action_open_port(self) -> None:

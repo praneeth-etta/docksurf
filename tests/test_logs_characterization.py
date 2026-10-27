@@ -6,12 +6,13 @@ into core (local/UI_SEPARATION_PLAN.md, Phase 3e) can be checked against it.
 
 import unittest
 
-from textual.widgets import DataTable, Label, RichLog
+from rich.text import Text
+from textual.widgets import DataTable, RichLog
 
 from docksurf_py.core.models import DockerSnapshot
 from docksurf_py.core.types import LogLine, LogOptions
 from docksurf_py.tui.app import DockSurfApp
-from docksurf_py.tui.ids import LOG_PANE_HEADER_ID, LOG_PANE_ID, TableID
+from docksurf_py.tui.ids import LOG_PANE_ID, TableID
 from docksurf_py.tui.widgets import LogPane
 from tests.test_app import MockDockerService, wait_until
 from tests.test_compose import make_container
@@ -38,7 +39,8 @@ async def _open(app: DockSurfApp, pilot, svc: MockDockerService) -> LogPane:
 
 
 def _header(pane: LogPane) -> str:
-    return str(pane.query_one(f"#{LOG_PANE_HEADER_ID}", Label).render())
+    # The source, stream state and filter hints live on the panel's border title.
+    return Text.from_markup(str(pane.border_title)).plain
 
 
 def _view_lines(pane: LogPane) -> list[str]:

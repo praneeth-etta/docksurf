@@ -84,7 +84,8 @@ class ResourceSearchController(_Base):
         self._apply_filter(self.query_one(f"#{SEARCH_BAR_ID}", Input).value)
 
     def _apply_filter(self, query: str) -> None:
-        if not self.snapshot:
+        # A debounced filter can fire after the app has started closing.
+        if not self.is_running or not self.snapshot:
             return
 
         active = self.query_one(TabbedContent).active

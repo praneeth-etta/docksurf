@@ -66,10 +66,9 @@ class ContainerTable(ResourceTable):
         Binding("e", "exec_container", "Exec"),
         Binding("E", "exec_custom", "Exec (custom)", show=False),
         Binding("C", "copy_files", "Copy files", show=False),
-        Binding("l", "view_logs", "Logs"),
+        Binding("l", "view_logs", "Full-view logs"),
         Binding("f", "follow_logs", "Follow"),
         Binding("c", "clear_logs", "Clear", show=False),
-        Binding("z", "toggle_log_expand", "Expand Logs", show=False),
         # Log-viewer controls, active while the pane is open (the handlers
         # no-op when it isn't). Mirrored here — like l/f/z above — so they fire
         # while the container table keeps focus; bare action names resolve up to

@@ -13,7 +13,6 @@ from textual.widgets import (
     Checkbox,
     DataTable,
     Input,
-    Label,
     LoadingIndicator,
     RichLog,
     Static,
@@ -63,14 +62,13 @@ from docksurf_py.tui.app import (
 )
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
-    BTN_EXPAND_ID,
     CONFIRM_FORCE_CHECKBOX_ID,
     CONNECTION_BANNER_ID,
     DETAIL_PANE_ID,
     EMPTY_STATE_IDS,
     INSPECT_SEARCH_ID,
     INSPECT_VIEW_ID,
-    LOG_PANE_HEADER_ID,
+    LIST_PANEL_ID,
     LOG_PANE_ID,
     PULL_PROGRESS_VIEW_ID,
     SEARCH_BAR_ID,
@@ -438,12 +436,16 @@ def _bar_text(app: DockSurfApp, bar_id: str, kind: type) -> str:
     return str(app.query_one(f"#{bar_id}", kind).content)
 
 
+# Calls that selecting a container row makes on its own.
+_SELECTION_CALLS = frozenset({"container_detail", "stream_logs", "stream_project_logs"})
+
+
 def _non_selection_calls(calls: list[tuple]) -> list[tuple]:
-    """Filter out `container_detail` — selecting a container row lazily
-    fetches its detail-pane-only fields (PATCH_WORK.md P-1) regardless of
-    what action a test then takes, so it isn't part of what these
+    """Filter out what selecting a row does regardless of the action a test then
+    takes: the lazy `container_detail` fetch (PATCH_WORK.md P-1) and the side
+    log panel following the cursor. They aren't part of what these
     "did the guarded/cancelled action call docker?" assertions care about."""
-    return [c for c in calls if c[0] != "container_detail"]
+    return [c for c in calls if c[0] not in _SELECTION_CALLS]
 
 
 class RefreshLoadingIndicatorTests(unittest.IsolatedAsyncioTestCase):
@@ -947,25 +949,30 @@ class RebuildServiceTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             await self._focus_web_service(app, pilot)
 
-            await pilot.press("B")
-            await wait_until(
-                lambda: any(isinstance(s, ConfirmDialog) for s in app.screen_stack)
-            )
-            app.screen_stack[-1].dismiss(True)
+            # Spy on the rebuild's own log hand-off: the side log panel also
+            # follows the focused row, so a `stream_logs` call alone no longer
+            # says which of the two asked for it.
+            with patch.object(app, "_open_container_logs") as opened:
+                await pilot.press("B")
+                await wait_until(
+                    lambda: any(isinstance(s, ConfirmDialog) for s in app.screen_stack)
+                )
+                app.screen_stack[-1].dismiss(True)
 
+                await wait_until(
+                    lambda: ("stream_compose_rebuild", "myapp", "web") in svc.calls
+                )
+                # Success: the build modal is dismissed and the recreated
+                # container's logs are opened — by its (stable) Compose name, so
+                # a changed id doesn't matter.
+                await wait_until(lambda: opened.called)
+                opened.assert_called_once_with("myapp-web", "myapp-web")
             await wait_until(
-                lambda: ("stream_compose_rebuild", "myapp", "web") in svc.calls
-            )
-            # Success: the build modal is dismissed and the recreated
-            # container's logs are opened — by its (stable) Compose name, so a
-            # changed id doesn't matter.
-            log_pane = app.query_one(f"#{LOG_PANE_ID}", LogPane)
-            await wait_until(lambda: log_pane.display)
-            self.assertFalse(
-                any(isinstance(s, BuildProgressScreen) for s in app.screen_stack)
-            )
-            self.assertTrue(
-                any(c[0] == "stream_logs" and c[1] == "myapp-web" for c in svc.calls)
+                lambda: (
+                    not any(
+                        isinstance(s, BuildProgressScreen) for s in app.screen_stack
+                    )
+                )
             )
 
     async def test_rebuild_failure_keeps_modal_and_skips_logs(self) -> None:
@@ -977,7 +984,10 @@ class RebuildServiceTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             await self._focus_web_service(app, pilot)
 
-            with patch.object(app, "notify") as notify:
+            with (
+                patch.object(app, "notify") as notify,
+                patch.object(app, "_open_container_logs") as opened,
+            ):
                 await pilot.press("B")
                 await wait_until(
                     lambda: any(isinstance(s, ConfirmDialog) for s in app.screen_stack)
@@ -993,7 +1003,7 @@ class RebuildServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(
                 any(isinstance(s, BuildProgressScreen) for s in app.screen_stack)
             )
-            self.assertFalse(app.query_one(f"#{LOG_PANE_ID}", LogPane).display)
+            opened.assert_not_called()
 
     async def test_rebuild_skips_build_less_service(self) -> None:
         svc = MockDockerService(_compose_snapshot)
@@ -1707,18 +1717,19 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(texts, ["starting up", "request handled", "boom"])
             self.assertEqual(log_pane._buffer.lines[2].stream, "stderr")
 
-    async def test_header_hints_lowercase_l_to_close(self) -> None:
-        """Regression (BF-8): the footer said "L to close" while the actual
-        binding is lowercase `l`."""
+    async def test_panel_hints_lowercase_l_for_full_view(self) -> None:
+        """Regression (BF-8): the hint used to say "L" while the actual binding
+        is lowercase `l`."""
         snapshot = _standalone_snapshot(running=True)
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
             log_pane = await self._open_logs(app, pilot)
-            header = log_pane.query_one(f"#{LOG_PANE_HEADER_ID}", Label)
-            text = str(header.render())
-            self.assertIn("l to close", text)
-            self.assertNotIn("L to close", text)
+            self.assertIn("l back", str(log_pane.border_subtitle))
+            self.assertNotIn("L ", str(log_pane.border_subtitle))
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertIn("l full view", str(log_pane.border_subtitle))
 
     async def test_toggle_timestamps_and_wrap_via_keys(self) -> None:
         snapshot = _standalone_snapshot(running=True)
@@ -1795,19 +1806,21 @@ class LogViewerTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-    async def test_expand_button_click_toggles_expanded(self) -> None:
+    async def test_l_toggles_full_view_and_escape_leaves_it(self) -> None:
         # Regression: LogPane.ToggleExpand used to be handled by a mixin
         # method (same class of dispatch bug as the header-click sort and
-        # live-search regressions above) — a real button click did nothing.
+        # live-search regressions above); the full-view toggle is a real key.
         snapshot = _standalone_snapshot(running=True)
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
         async with app.run_test() as pilot:
             await pilot.pause()
-            log_pane = await self._open_logs(app, pilot)
-            self.assertFalse(log_pane.has_class("expanded"))
-            await pilot.click(f"#{LOG_PANE_ID} #{BTN_EXPAND_ID}")
-            await pilot.pause()
+            log_pane = await self._open_logs(app, pilot)  # presses `l`
             self.assertTrue(log_pane.has_class("expanded"))
+            self.assertFalse(app.query_one(f"#{LIST_PANEL_ID}").display)
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(log_pane.has_class("expanded"))
+            self.assertTrue(app.query_one(f"#{LIST_PANEL_ID}").display)
 
 
 def _image(repo="alpine", tag="latest", dangling=False, image_id="sha256:img1"):

@@ -3,6 +3,7 @@ gutter). Assertions run inside the `run_test()` block — teardown resets live
 state."""
 
 import unittest
+from unittest.mock import patch
 
 from rich.console import Console
 from textual.widgets import DataTable, Static, TabbedContent
@@ -68,10 +69,8 @@ class ContainerColumnsTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(160, 30)) as pilot:
             table = await _ready(app, pilot)
             labels = [str(c.label) for c in table.ordered_columns]
-            self.assertEqual(
-                labels, ["", "Name", "State", "Uptime", "Ports", "CPU", "Mem", "Image"]
-            )
-            self.assertEqual(len(table.get_row_at(0)), 8)
+            self.assertEqual(labels, ["", "Name", "State", "Uptime", "Ports", "Image"])
+            self.assertEqual(len(table.get_row_at(0)), 6)
 
     async def test_sort_by_state_puts_failed_first(self) -> None:
         snapshot = _snapshot()
@@ -405,15 +404,24 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
 
         svc.stream_stats = stream_stats  # type: ignore[method-assign]
         app = DockSurfApp(docker=svc)
+        # A long settle delay keeps this about the debounce, not machine speed
+        # (the burst below re-renders the card five times).
+        with patch("docksurf_py.tui.observability.SIDE_RETARGET_DELAY", 1.0):
+            await self._fast_burst(app, started)
+
+    async def _fast_burst(self, app: DockSurfApp, started: list[str]) -> None:
         async with app.run_test(size=(160, 40)) as pilot:
             table = await _ready(app, pilot)
-            await wait_until(lambda: app._live.stats_target == "c0", timeout=3.0)
+            await wait_until(lambda: app._live.stats_target == "c0", timeout=4.0)
             started.clear()
-            for _ in range(5):
-                await pilot.press("down")
+            # One burst, as holding `↓` produces (separate `press` calls can be
+            # slower than the settle delay under load).
+            for row in range(1, 6):
+                table.move_cursor(row=row)
+            await pilot.pause()
             self.assertEqual(table.cursor_row, 5)
             self.assertEqual(started, [])  # still waiting for the cursor to settle
-            await wait_until(lambda: app._live.stats_target == "c5", timeout=3.0)
+            await wait_until(lambda: app._live.stats_target == "c5", timeout=4.0)
             await pilot.pause(0.5)
             self.assertEqual(started, ["c5"])
 
