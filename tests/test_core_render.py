@@ -2,8 +2,27 @@
 highlighting. Plain pytest, no Textual app."""
 
 import unittest
+from datetime import datetime, timedelta, timezone
 
-from docksurf_py.core.models import ComposeProject, HealthProbe
+from rich.text import Text
+
+from docksurf_py.core.models import (
+    ComposeProject,
+    DiskUsageEntry,
+    HealthProbe,
+    Image,
+    SystemDf,
+)
+from docksurf_py.core.render.images import (
+    SIZE_WIDTH,
+    RepoParts,
+    compact_relative,
+    image_row_cells,
+    image_status,
+    repository_cell,
+    split_repository,
+    status_rank,
+)
 from docksurf_py.core.render.logs import highlight_match
 from docksurf_py.core.render.markup import (
     format_health_log,
@@ -14,6 +33,12 @@ from docksurf_py.core.render.markup import (
     status_markup,
     truncate,
 )
+from docksurf_py.core.render.observability import (
+    images_disk_line,
+    images_disk_usage,
+    split_bar,
+)
+from docksurf_py.core.render.palette import TIDE_PALETTE
 from docksurf_py.core.types import STATUS_GREEN, STATUS_RED, STATUS_YELLOW, SafeMarkup
 from tests.test_compose import make_container
 
@@ -117,3 +142,297 @@ class HighlightMatchTests(unittest.TestCase):
     def test_regex_metacharacters_in_term_are_literal(self) -> None:
         out = highlight_match("cost $5.00 (approx)", "(approx)")
         self.assertIn("[bold yellow](approx)[/]", out)
+
+
+def _cells(markup: str) -> dict[str, int]:
+    """Count the `━` cells per colour in a rendered bar."""
+    text = Text.from_markup(markup)
+    out: dict[str, int] = {}
+    for span in text.spans:
+        colour = str(span.style).lower()
+        out[colour] = out.get(colour, 0) + text.plain[span.start : span.end].count("━")
+    return out
+
+
+class SplitBarTests(unittest.TestCase):
+    p = TIDE_PALETTE
+
+    def test_is_proportional_and_fills_the_width(self) -> None:
+        bar = split_bar(25, 75, 20, self.p)
+        self.assertEqual(Text.from_markup(bar).plain, "━" * 20)
+        self.assertEqual(
+            _cells(bar), {self.p.success.lower(): 5, self.p.warning.lower(): 15}
+        )
+
+    def test_a_tiny_part_still_gets_one_cell(self) -> None:
+        self.assertEqual(
+            _cells(split_bar(10_000, 1, 20, self.p)),
+            {self.p.success.lower(): 19, self.p.warning.lower(): 1},
+        )
+        self.assertEqual(
+            _cells(split_bar(1, 10_000, 20, self.p)),
+            {self.p.success.lower(): 1, self.p.warning.lower(): 19},
+        )
+
+    def test_all_in_use_and_all_reclaimable(self) -> None:
+        self.assertEqual(
+            _cells(split_bar(50, 0, 10, self.p)), {self.p.success.lower(): 10}
+        )
+        self.assertEqual(
+            _cells(split_bar(0, 50, 10, self.p)), {self.p.warning.lower(): 10}
+        )
+
+    def test_empty_is_a_faint_track_and_zero_width_is_empty(self) -> None:
+        self.assertEqual(
+            _cells(split_bar(0, 0, 10, self.p)), {self.p.faint.lower(): 10}
+        )
+        self.assertEqual(split_bar(5, 5, 0, self.p), "")
+
+    def test_approximate_is_drawn_faint(self) -> None:
+        bar = split_bar(25, 75, 20, self.p, approximate=True)
+        self.assertEqual(_cells(bar), {self.p.faint.lower(): 20})
+
+
+def _df(size: int, reclaimable: int) -> SystemDf:
+    return SystemDf(
+        entries=[
+            DiskUsageEntry("Containers", 1, 1, 7, 0),
+            DiskUsageEntry("Images", 3, 1, size, reclaimable),
+        ],
+        total_size=size + 7,
+        total_reclaimable=reclaimable,
+    )
+
+
+class ImagesDiskLineTests(unittest.TestCase):
+    p = TIDE_PALETTE
+    GB = 1024**3
+
+    def test_usage_comes_from_the_df_images_entry(self) -> None:
+        self.assertEqual(images_disk_usage(_df(100, 40), []), (100, 40, False))
+
+    def test_usage_falls_back_to_the_snapshot_sum_as_approximate(self) -> None:
+        used = Image("sha256:a", "a", "latest", 30, False, ["c1"], "")
+        unused = Image("sha256:b", "b", "latest", 70, False, [], "")
+        self.assertEqual(images_disk_usage(None, [used, unused]), (100, 70, True))
+        # A df without an Images entry is as good as none.
+        empty = SystemDf(entries=[], total_size=0, total_reclaimable=0)
+        self.assertTrue(images_disk_usage(empty, [used])[2])
+
+    def test_line_shows_totals_bar_legend_and_prune_hint(self) -> None:
+        line = images_disk_line(_df(62 * self.GB, 40 * self.GB), [], 120, self.p)
+        plain = Text.from_markup(line).plain
+        self.assertTrue(plain.startswith("62.00GB on disk"))
+        self.assertIn("■ in use 22.00GB", plain)
+        self.assertIn("■ reclaimable 40.00GB", plain)
+        self.assertTrue(plain.endswith("P prune"))
+        self.assertLessEqual(len(plain), 120)
+        self.assertGreater(plain.count("━"), 8)
+
+    def test_fallback_is_marked_with_an_approx_sign(self) -> None:
+        plain = Text.from_markup(images_disk_line(None, [], 120, self.p)).plain
+        self.assertTrue(plain.startswith("≈0B on disk"))
+
+    def test_narrow_widths_drop_the_bar_then_the_legend(self) -> None:
+        df = _df(62 * self.GB, 40 * self.GB)
+        no_bar = Text.from_markup(images_disk_line(df, [], 70, self.p)).plain
+        self.assertNotIn("━", no_bar)
+        self.assertIn("reclaimable", no_bar)
+        self.assertLessEqual(len(no_bar), 70)
+        tiny = Text.from_markup(images_disk_line(df, [], 20, self.p)).plain
+        self.assertEqual(tiny, "62.00GB on disk")
+
+
+class SplitRepositoryTests(unittest.TestCase):
+    def test_ecr_keeps_the_account_id_as_namespace(self) -> None:
+        self.assertEqual(
+            split_repository("123456789012.dkr.ecr.eu-west-1.amazonaws.com/app"),
+            RepoParts("ecr", "123456789012", "app"),
+        )
+        self.assertEqual(
+            split_repository("123456789012.dkr.ecr.us-east-1.amazonaws.com/team/app"),
+            RepoParts("ecr", "123456789012/team", "app"),
+        )
+
+    def test_ghcr_and_quay(self) -> None:
+        self.assertEqual(
+            split_repository("ghcr.io/org/tool"), RepoParts("ghcr", "org", "tool")
+        )
+        self.assertEqual(
+            split_repository("quay.io/org/tool"), RepoParts("quay", "org", "tool")
+        )
+
+    def test_gcr_hosts(self) -> None:
+        for host in ("gcr.io", "eu.gcr.io", "europe-docker.pkg.dev"):
+            self.assertEqual(
+                split_repository(f"{host}/proj/img"), RepoParts("gcr", "proj", "img")
+            )
+
+    def test_other_hosts_show_the_host_truncated_to_ten(self) -> None:
+        self.assertEqual(
+            split_repository("my.reg.io/a/b"), RepoParts("my.reg.io", "a", "b")
+        )
+        label = split_repository("registry.example.internal/a/b").registry
+        assert label is not None
+        self.assertEqual(len(label), 10)
+        self.assertTrue(label.endswith("…"))
+        self.assertEqual(
+            split_repository("localhost:5000/app"),
+            RepoParts("localhost…", "", "app"),
+        )
+
+    def test_docker_hub_has_no_pill(self) -> None:
+        for repo in ("docker.io/library/nginx", "library/nginx", "nginx"):
+            self.assertEqual(split_repository(repo), RepoParts(None, "", "nginx"))
+        self.assertEqual(
+            split_repository("docker.io/org/x"), RepoParts(None, "org", "x")
+        )
+        self.assertEqual(split_repository("org/x"), RepoParts(None, "org", "x"))
+
+    def test_none_and_empty_are_the_dangling_placeholder(self) -> None:
+        for repo in ("<none>", ""):
+            self.assertEqual(split_repository(repo), RepoParts(None, "", "<none>"))
+
+
+class RepositoryCellTests(unittest.TestCase):
+    p = TIDE_PALETTE
+
+    def _plain(self, repo: str, width: int = 40) -> str:
+        return Text.from_markup(repository_cell(repo, self.p, width)).plain
+
+    def test_registry_pill_muted_prefix_and_name(self) -> None:
+        cell = repository_cell("ghcr.io/org/tool", self.p, 40)
+        self.assertEqual(Text.from_markup(cell).plain, " ghcr  org › tool")
+        self.assertIn(f"on {self.p.secondary}] ghcr [/]", cell)
+
+    def test_ecr_cell(self) -> None:
+        self.assertEqual(
+            self._plain("123456789012.dkr.ecr.eu-west-1.amazonaws.com/app"),
+            " ecr  123456789012 › app",
+        )
+
+    def test_docker_hub_cells_have_no_pill(self) -> None:
+        self.assertEqual(self._plain("docker.io/library/nginx"), "nginx")
+        self.assertEqual(self._plain("library/nginx"), "nginx")
+        self.assertEqual(self._plain("nginx"), "nginx")
+        self.assertEqual(self._plain("docker.io/org/x"), "org/x")
+
+    def test_none_is_muted(self) -> None:
+        cell = repository_cell("<none>", self.p, 20)
+        self.assertEqual(Text.from_markup(cell).plain, "<none>")
+        self.assertIn(self.p.muted, cell)
+
+    def test_markup_in_names_is_escaped(self) -> None:
+        self.assertEqual(self._plain("org/[bold]x"), "org/[bold]x")
+
+    def test_namespace_is_truncated_before_the_name(self) -> None:
+        plain = self._plain("123456789012.dkr.ecr.eu-west-1.amazonaws.com/app", 16)
+        self.assertEqual(len(plain), 16)
+        self.assertTrue(plain.endswith(" › app"))
+        self.assertIn("…", plain)
+
+    def test_name_is_truncated_once_the_namespace_is_a_lone_ellipsis(self) -> None:
+        plain = self._plain("ghcr.io/org/averyveryverylongimagename", 14)
+        self.assertEqual(len(plain), 14)
+        self.assertIn("…", plain)
+        self.assertNotIn("ghcr", plain)  # pill dropped: nothing else fits
+
+    def test_every_width_is_respected(self) -> None:
+        for repo in (
+            "123456789012.dkr.ecr.eu-west-1.amazonaws.com/team/application",
+            "quay.io/organisation/application",
+            "organisation/application",
+            "application",
+        ):
+            for width in range(1, 50):
+                self.assertLessEqual(
+                    len(self._plain(repo, width)), width, (repo, width)
+                )
+
+
+NOW = datetime(2026, 10, 28, tzinfo=timezone.utc)
+
+
+def _ago(**delta: int) -> str:
+    return (NOW - timedelta(**delta)).isoformat()
+
+
+class CompactRelativeTests(unittest.TestCase):
+    def test_one_unit_per_range(self) -> None:
+        cases = [
+            (_ago(seconds=5), "now"),
+            (_ago(minutes=7), "7m"),
+            (_ago(hours=5), "5h"),
+            (_ago(days=3), "3d"),
+            (_ago(days=14), "2w"),
+            (_ago(days=29), "4w"),
+            (_ago(days=60), "2mo"),
+            (_ago(days=400), "1y"),
+        ]
+        for created, expected in cases:
+            self.assertEqual(compact_relative(created, NOW), expected, created)
+
+    def test_unknown_or_future_timestamps(self) -> None:
+        self.assertEqual(compact_relative("", NOW), "—")
+        self.assertEqual(compact_relative("garbage", NOW), "—")
+        self.assertEqual(
+            compact_relative((NOW + timedelta(hours=1)).isoformat(), NOW), "now"
+        )
+
+    def test_accepts_docker_z_timestamps_with_nanoseconds(self) -> None:
+        self.assertEqual(compact_relative("2026-10-24T20:00:00.123456789Z", NOW), "3d")
+
+
+class ImageStatusAndRowTests(unittest.TestCase):
+    p = TIDE_PALETTE
+
+    @staticmethod
+    def _img(used: list[str] | None = None, dangling: bool = False, **kw) -> Image:
+        return Image(
+            kw.get("id", "sha256:x"),
+            kw.get("repo", "app"),
+            kw.get("tag", "latest"),
+            kw.get("size", 1024**3),
+            dangling,
+            used or [],
+            kw.get("created", _ago(days=3)),
+        )
+
+    def test_status_precedence_and_sort_rank(self) -> None:
+        in_use = self._img(["c"])
+        unused = self._img()
+        dangling = self._img(dangling=True)
+        in_use_dangling = self._img(["c"], dangling=True)
+        self.assertEqual(
+            [image_status(i) for i in (in_use, unused, dangling, in_use_dangling)],
+            ["in use", "unused", "dangling", "in use"],
+        )
+        self.assertEqual(
+            [status_rank(i) for i in (in_use, unused, dangling)], [0, 1, 2]
+        )
+
+    def test_row_cells(self) -> None:
+        repo, tag, size, created, status = (
+            Text.from_markup(c) for c in image_row_cells(self._img(["c"]), self.p, NOW)
+        )
+        self.assertEqual(repo.plain, "app")
+        self.assertEqual(tag.plain, "latest")
+        self.assertEqual(size.plain, "1.00GB".rjust(SIZE_WIDTH))
+        self.assertEqual(created.plain, "3d")
+        self.assertEqual(status.plain, "● in use")
+
+    def test_status_glyph_and_colour_per_state(self) -> None:
+        for image, text, role in [
+            (self._img(["c"]), "● in use", self.p.success),
+            (self._img(), "○ unused", self.p.muted),
+            (self._img(dangling=True), "✕ dangling", self.p.warning),
+        ]:
+            cell = image_row_cells(image, self.p, NOW)[4]
+            self.assertEqual(Text.from_markup(cell).plain, text)
+            self.assertIn(role, cell)
+
+    def test_long_tag_is_truncated_and_none_tag_is_muted(self) -> None:
+        long_tag = image_row_cells(self._img(tag="x" * 40), self.p, NOW)[1]
+        self.assertLessEqual(len(Text.from_markup(long_tag).plain), 12)
+        none_tag = image_row_cells(self._img(tag="<none>"), self.p, NOW)[1]
+        self.assertIn(self.p.muted, none_tag)

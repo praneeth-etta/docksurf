@@ -25,6 +25,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
+from rich.text import Text
 from textual.widgets import DataTable, Input, Static, TabbedContent
 
 from docksurf_py.core.models import (
@@ -192,6 +193,11 @@ def _cell_texts(app: DockSurfApp, tab: TabID, column: int) -> list[str]:
     return [str(table.get_row_at(i)[column]) for i in range(table.row_count)]
 
 
+def _plain_cells(app: DockSurfApp, tab: TabID, column: int) -> list[str]:
+    """`_cell_texts` with Rich markup (colours, pills) stripped."""
+    return [Text.from_markup(t).plain for t in _cell_texts(app, tab, column)]
+
+
 def _marked_rows(app: DockSurfApp, tab: TabID) -> list[int]:
     # A marked row under the cursor shows `✓` in the Containers gutter (phase
     # 02A) instead of the plain mark glyph.
@@ -300,7 +306,7 @@ def _scenarios() -> dict[str, tuple[TabID, Callable[[], DockerSnapshot], Scenari
 
     async def mark_one_nginx_tag(app, pilot):
         table = _table(app, TabID.IMAGES)
-        tags = _cell_texts(app, TabID.IMAGES, 2)
+        tags = _plain_cells(app, TabID.IMAGES, 2)
         await _mark_row(app, pilot, TabID.IMAGES, tags.index("1.27"))
         assert table.row_count == len(tags)
 
@@ -707,10 +713,10 @@ class CollapseSortSearchAcrossRefreshTests(unittest.IsolatedAsyncioTestCase):
             search.display = True
             search.value = "web"
             await _filter(app, pilot, "web")
-            self.assertEqual(_cell_texts(app, TabID.IMAGES, 1), ["web-b", "web-a"])
+            self.assertEqual(_plain_cells(app, TabID.IMAGES, 1), ["web-b", "web-a"])
 
             state["snap"] = snap(["web-b", "db", "web-a", "web-c", "cache"])
             await _refresh(app, pilot)
             self.assertEqual(
-                _cell_texts(app, TabID.IMAGES, 1), ["web-c", "web-b", "web-a"]
+                _plain_cells(app, TabID.IMAGES, 1), ["web-c", "web-b", "web-a"]
             )

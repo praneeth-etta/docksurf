@@ -501,3 +501,83 @@ class ChipTests(unittest.TestCase):
         self.assertEqual(state.active_chip[TabID.CONTAINERS], "stopped")
         rows = state.build_rows(TabID.CONTAINERS, snap)
         self.assertEqual(_row_names(rows), ["cold", "cache", "shop", "db"])
+
+
+def _image_chip_state() -> tuple[TablesState, DockerSnapshot]:
+    from docksurf_py.core.state.tables import IMAGE_CHIPS
+
+    kind = ResourceKind(
+        label="image",
+        snapshot_items=lambda snap: snap.images,
+        matches=lambda image, q: q in image.repository.lower(),
+        chips=IMAGE_CHIPS,
+    )
+    snapshot = DockerSnapshot(
+        containers=[],
+        images=[
+            Image("sha256:a", "app", "latest", 10, False, ["web"], ""),
+            Image("sha256:b", "app", "old", 10, False, [], ""),
+            Image("sha256:c", "redis", "7", 10, False, [], ""),
+            Image("sha256:d", "<none>", "<none>", 10, True, [], ""),
+        ],
+        volumes=[],
+        networks=[],
+    )
+    return TablesState({TabID.IMAGES: kind}), snapshot
+
+
+class ImageChipTests(unittest.TestCase):
+    def _tags(self, state: TablesState, snap: DockerSnapshot, chip: str) -> list[str]:
+        state.set_chip(TabID.IMAGES, chip)
+        return [i.tag for i in state.build_rows(TabID.IMAGES, snap)]
+
+    def test_in_use_unused_and_dangling_partition_the_images(self) -> None:
+        state, snap = _image_chip_state()
+        self.assertEqual(self._tags(state, snap, "in_use"), ["latest"])
+        self.assertEqual(self._tags(state, snap, "unused"), ["old", "7"])
+        self.assertEqual(self._tags(state, snap, "dangling"), ["<none>"])
+
+    def test_dangling_image_is_not_counted_as_unused(self) -> None:
+        state, snap = _image_chip_state()
+        self.assertEqual(
+            state.chip_counts(TabID.IMAGES, snap),
+            {"all": 4, "in_use": 1, "unused": 2, "dangling": 1},
+        )
+
+    def test_chip_composes_with_the_text_query(self) -> None:
+        state, snap = _image_chip_state()
+        state.set_chip(TabID.IMAGES, "unused")
+        rows = state.build_rows(TabID.IMAGES, snap, "redis")
+        self.assertEqual([i.tag for i in rows], ["7"])
+
+    def test_chip_label_is_the_display_text(self) -> None:
+        state, _ = _image_chip_state()
+        self.assertEqual(state.chip_label(TabID.IMAGES), "all")
+        state.set_chip(TabID.IMAGES, "in_use")
+        self.assertEqual(state.chip_label(TabID.IMAGES), "in use")
+
+
+class DefaultSortTests(unittest.TestCase):
+    @staticmethod
+    def _state(sort_state=None, keys=("Size",)) -> TablesState:
+        kind = ResourceKind(
+            label="image",
+            snapshot_items=lambda snap: snap.images,
+            matches=lambda image, q: True,
+            sort_keys={k: (lambda i: i.size_bytes) for k in keys},
+        )
+        return TablesState({TabID.IMAGES: kind}, sort_state=sort_state)
+
+    def test_images_start_sorted_by_size_descending(self) -> None:
+        self.assertEqual(self._state().sort(TabID.IMAGES), ("Size", True))
+
+    def test_a_saved_sort_wins_over_the_default(self) -> None:
+        state = self._state({TabID.IMAGES: ("Tag", False)}, keys=("Size", "Tag"))
+        self.assertEqual(state.sort(TabID.IMAGES), ("Tag", False))
+
+    def test_no_default_when_the_kind_has_no_such_sort_column(self) -> None:
+        self.assertIsNone(self._state(keys=("Tag",)).sort(TabID.IMAGES))
+
+    def test_first_click_on_the_default_column_flips_to_ascending(self) -> None:
+        state = self._state()
+        self.assertEqual(state.cycle_sort(TabID.IMAGES, "Size"), ("Size", False))

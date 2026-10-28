@@ -83,6 +83,12 @@ BottomBar {
     height: 100%;
 }
 
+ToolbarLine {
+    height: 1;
+    width: 100%;
+    background: $background;
+}
+
 #list-toolbar {
     height: 1;
     margin-bottom: 1;

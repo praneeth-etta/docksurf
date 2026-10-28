@@ -765,44 +765,50 @@
       "",
       "Repository",
       "Tag",
-      "Size",
+      "      Size ▼",
+      "Created",
       "Status"
     ],
     "rows": [
       [
-        "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#7aa2f7]▌[/]",
+        "[#f7ffff]very-long-repository-name[/]",
+        "[#cdd6e4]2026.10.24-…[/]",
+        "[#cdd6e4]      1.15GB[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]○ unused[/]"
       ],
       [
         "",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "<none>",
-        "<none>",
-        "4.77MB",
-        "[yellow]Unused[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "registry.example.com/team/ver…",
-        "2026.10.2…",
-        "1.15GB",
-        "[yellow]Unused[/]"
+        "[#f7ffff]alpine[/]",
+        "[#cdd6e4]3[/]",
+        "[#cdd6e4]      6.68MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "alpine",
-        "3",
-        "6.68MB",
-        "[green]In Use[/]"
+        "[#7a879d]<none>[/]",
+        "[#7a879d]<none>[/]",
+        "[#cdd6e4]      4.77MB[/]",
+        "[#7a879d]—[/]",
+        "[#e5b567]✕ dangling[/]"
       ]
     ],
     "table_visible": true,
@@ -813,44 +819,50 @@
       "",
       "Repository",
       "Tag",
-      "Size ▲",
+      "      Size ▲",
+      "Created",
       "Status"
     ],
     "rows": [
       [
         "",
-        "<none>",
-        "<none>",
-        "4.77MB",
-        "[yellow]Unused[/]"
+        "[#7a879d]<none>[/]",
+        "[#7a879d]<none>[/]",
+        "[#cdd6e4]      4.77MB[/]",
+        "[#7a879d]—[/]",
+        "[#e5b567]✕ dangling[/]"
       ],
       [
         "",
-        "alpine",
-        "3",
-        "6.68MB",
-        "[green]In Use[/]"
+        "[#f7ffff]alpine[/]",
+        "[#cdd6e4]3[/]",
+        "[#cdd6e4]      6.68MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
-        "",
-        "registry.example.com/team/ver…",
-        "2026.10.2…",
-        "1.15GB",
-        "[yellow]Unused[/]"
+        "[#7aa2f7]▌[/]",
+        "[#f7ffff]very-long-repository-name[/]",
+        "[#cdd6e4]2026.10.24-…[/]",
+        "[#cdd6e4]      1.15GB[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]○ unused[/]"
       ]
     ],
     "table_visible": true,
@@ -861,44 +873,50 @@
       "",
       "Repository",
       "Tag",
-      "Size ▼",
+      "      Size ▼",
+      "Created",
       "Status"
     ],
     "rows": [
       [
         "",
-        "registry.example.com/team/ver…",
-        "2026.10.2…",
-        "1.15GB",
-        "[yellow]Unused[/]"
+        "[#f7ffff]very-long-repository-name[/]",
+        "[#cdd6e4]2026.10.24-…[/]",
+        "[#cdd6e4]      1.15GB[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]○ unused[/]"
       ],
       [
         "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "alpine",
-        "3",
-        "6.68MB",
-        "[green]In Use[/]"
+        "[#f7ffff]alpine[/]",
+        "[#cdd6e4]3[/]",
+        "[#cdd6e4]      6.68MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
-        "",
-        "<none>",
-        "<none>",
-        "4.77MB",
-        "[yellow]Unused[/]"
+        "[#7aa2f7]▌[/]",
+        "[#7a879d]<none>[/]",
+        "[#7a879d]<none>[/]",
+        "[#cdd6e4]      4.77MB[/]",
+        "[#7a879d]—[/]",
+        "[#e5b567]✕ dangling[/]"
       ]
     ],
     "table_visible": true,
@@ -909,44 +927,50 @@
       "",
       "Repository",
       "Tag",
-      "Size",
+      "        Size",
+      "Created",
       "Status ▲"
     ],
     "rows": [
       [
         "",
-        "<none>",
-        "<none>",
-        "4.77MB",
-        "[yellow]Unused[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "registry.example.com/team/ver…",
-        "2026.10.2…",
-        "1.15GB",
-        "[yellow]Unused[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]alpine[/]",
+        "[#cdd6e4]3[/]",
+        "[#cdd6e4]      6.68MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
+      ],
+      [
+        "[#7aa2f7]▌[/]",
+        "[#f7ffff]very-long-repository-name[/]",
+        "[#cdd6e4]2026.10.24-…[/]",
+        "[#cdd6e4]      1.15GB[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]○ unused[/]"
       ],
       [
         "",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
-      ],
-      [
-        "",
-        "alpine",
-        "3",
-        "6.68MB",
-        "[green]In Use[/]"
+        "[#7a879d]<none>[/]",
+        "[#7a879d]<none>[/]",
+        "[#cdd6e4]      4.77MB[/]",
+        "[#7a879d]—[/]",
+        "[#e5b567]✕ dangling[/]"
       ]
     ],
     "table_visible": true,
@@ -957,23 +981,26 @@
       "",
       "Repository",
       "Tag",
-      "Size",
+      "      Size ▼",
+      "Created",
       "Status"
     ],
     "rows": [
       [
-        "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#7aa2f7]▌[/]",
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ]
     ],
     "table_visible": true,
@@ -984,44 +1011,50 @@
       "",
       "Repository",
       "Tag",
-      "Size",
+      "      Size ▼",
+      "Created",
       "Status"
     ],
     "rows": [
       [
         "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]very-long-repository-name[/]",
+        "[#cdd6e4]2026.10.24-…[/]",
+        "[#cdd6e4]      1.15GB[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]○ unused[/]"
+      ],
+      [
+        "",
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "[bold cyan]●[/]",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
+      ],
+      [
+        "[#7aa2f7]▌[/]",
+        "[#f7ffff]alpine[/]",
+        "[#cdd6e4]3[/]",
+        "[#cdd6e4]      6.68MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "<none>",
-        "<none>",
-        "4.77MB",
-        "[yellow]Unused[/]"
-      ],
-      [
-        "",
-        "registry.example.com/team/ver…",
-        "2026.10.2…",
-        "1.15GB",
-        "[yellow]Unused[/]"
-      ],
-      [
-        "",
-        "alpine",
-        "3",
-        "6.68MB",
-        "[green]In Use[/]"
+        "[#7a879d]<none>[/]",
+        "[#7a879d]<none>[/]",
+        "[#cdd6e4]      4.77MB[/]",
+        "[#7a879d]—[/]",
+        "[#e5b567]✕ dangling[/]"
       ]
     ],
     "table_visible": true,
@@ -1032,44 +1065,50 @@
       "",
       "Repository",
       "Tag",
-      "Size",
+      "      Size ▼",
+      "Created",
       "Status"
     ],
     "rows": [
       [
         "",
-        "nginx",
-        "latest",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]very-long-repository-name[/]",
+        "[#cdd6e4]2026.10.24-…[/]",
+        "[#cdd6e4]      1.15GB[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]○ unused[/]"
+      ],
+      [
+        "",
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]latest[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "[bold cyan]●[/]",
-        "nginx",
-        "1.27",
-        "181.20MB",
-        "[green]In Use[/]"
+        "[#f7ffff]nginx[/]",
+        "[#cdd6e4]1.27[/]",
+        "[#cdd6e4]    181.20MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
+      ],
+      [
+        "[#7aa2f7]▌[/]",
+        "[#f7ffff]alpine[/]",
+        "[#cdd6e4]3[/]",
+        "[#cdd6e4]      6.68MB[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]● in use[/]"
       ],
       [
         "",
-        "<none>",
-        "<none>",
-        "4.77MB",
-        "[yellow]Unused[/]"
-      ],
-      [
-        "",
-        "registry.example.com/team/ver…",
-        "2026.10.2…",
-        "1.15GB",
-        "[yellow]Unused[/]"
-      ],
-      [
-        "",
-        "alpine",
-        "3",
-        "6.68MB",
-        "[green]In Use[/]"
+        "[#7a879d]<none>[/]",
+        "[#7a879d]<none>[/]",
+        "[#cdd6e4]      4.77MB[/]",
+        "[#7a879d]—[/]",
+        "[#e5b567]✕ dangling[/]"
       ]
     ],
     "table_visible": true,
@@ -1080,7 +1119,8 @@
       "",
       "Repository",
       "Tag",
-      "Size",
+      "      Size ▼",
+      "Created",
       "Status"
     ],
     "rows": [],

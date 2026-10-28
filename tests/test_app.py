@@ -2562,7 +2562,8 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [i.size_bytes for i in app._tables.rows[TabID.IMAGES]], [100, 200, 300]
             )
-            labels = [str(col.label) for col in table.ordered_columns]
+            # The right-aligned SIZE header is padded to the column width.
+            labels = [str(col.label).strip() for col in table.ordered_columns]
             self.assertIn("Size ▲", labels)
 
             app._on_header_selected(_FakeHeaderSelected(table, column_index=3))
@@ -2570,7 +2571,7 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [i.size_bytes for i in app._tables.rows[TabID.IMAGES]], [300, 200, 100]
             )
-            labels = [str(col.label) for col in table.ordered_columns]
+            labels = [str(col.label).strip() for col in table.ordered_columns]
             self.assertIn("Size ▼", labels)
 
     async def test_sort_persists_across_refresh(self) -> None:

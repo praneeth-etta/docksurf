@@ -20,8 +20,8 @@ from docksurf_py.core.render.containers import (
     container_row_cells,
     project_row_cells,
 )
+from docksurf_py.core.render.images import image_row_cells
 from docksurf_py.core.render.markup import (
-    image_status_markup,
     network_containers_markup,
     truncate,
 )
@@ -96,7 +96,10 @@ class TableRenderer(_Base):
             label = col
             if sort_state is not None and sort_state[0] == col:
                 label = f"{col} {'▼' if sort_state[1] else '▲'}"
-            table.add_column(label, width=entry.column_widths.get(col))
+            width = entry.column_widths.get(col)
+            if col in entry.right_columns and width:
+                label = label.rjust(width)
+            table.add_column(label, width=width)
 
     def _on_header_selected(self, event: DataTable.HeaderSelected) -> None:
         """Handle a header click and toggle that column's sort.
@@ -175,11 +178,8 @@ class TableRenderer(_Base):
         for i in rows:
             _safe_row(
                 table,
-                self._mark_cell(TabID.IMAGES, i),
-                truncate(i.repository, NAME_MAX_CHARS),
-                truncate(i.tag, 10),
-                format_size(i.size_bytes),
-                image_status_markup(i.used_by),
+                self._gutter_cell(TabID.IMAGES, i, False),
+                *image_row_cells(i, self._view.palette),
             )
         self._finish_populate(TabID.IMAGES, table, rows)
 
@@ -307,9 +307,9 @@ class TableRenderer(_Base):
         if query:
             message = f"No {entry.label}s match {query!r}"
             if chip != ALL_CHIP:
-                message += f" ({chip})"
+                message += f" ({self._tables.chip_label(tab_id)})"
         elif chip != ALL_CHIP:
-            message = f"No {chip} {entry.label}s"
+            message = f"No {self._tables.chip_label(tab_id)} {entry.label}s"
         elif not self.docker.is_connected:
             state = self.docker.connection
             message = state.message

@@ -234,6 +234,8 @@ class SnapshotManager(_Base):
         watcher.run()
 
     def _on_docker_event(self) -> None:
+        # Cheap flag only: the df is refetched on the next Images/Volumes entry.
+        self._details.mark_system_df_stale()
         # Coalesce bursts (e.g. `compose up` emits many events) into one refresh.
         if self._refresh_debounce is not None:
             self._refresh_debounce.stop()

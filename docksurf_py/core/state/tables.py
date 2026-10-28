@@ -26,6 +26,10 @@ from docksurf_py.core.types import TabID
 RowKey = tuple[str, str]
 SortState = tuple[str, bool]
 
+# Sort a tab starts with when no previous session set one (and its kind has
+# a sort key for the column): images largest first.
+DEFAULT_SORT: dict[TabID, SortState] = {TabID.IMAGES: ("Size", True)}
+
 
 def row_key(item: Any) -> RowKey | None:
     """Stable identity for a row-backing object, for selection restore."""
@@ -136,6 +140,12 @@ CONTAINER_CHIPS: tuple[Chip, ...] = (
     Chip("failed", "failed", _in_states(RunState.FAILED, RunState.UNHEALTHY), "error"),
 )
 
+IMAGE_CHIPS: tuple[Chip, ...] = (
+    Chip("in_use", "in use", lambda i: bool(i.used_by), "success"),
+    Chip("unused", "unused", lambda i: not i.used_by and not i.is_dangling),
+    Chip("dangling", "dangling", lambda i: i.is_dangling, "warning"),
+)
+
 
 @dataclass(frozen=True)
 class ResourceKind:
@@ -183,7 +193,8 @@ class TablesState:
         self.marked: dict[TabID, set[RowKey]] = {tab: set() for tab in self.kinds}
         # Per-tab column sort: (column, reverse), or None for snapshot order.
         self.sort_state: dict[TabID, SortState | None] = {
-            tab: (sort_state or {}).get(tab) for tab in self.kinds
+            tab: (sort_state or {}).get(tab) or self._default_sort(tab)
+            for tab in self.kinds
         }
         # Tabs whose table hasn't been rebuilt since the last snapshot.
         # Inactive tabs are caught up lazily when they become active.
@@ -247,6 +258,11 @@ class TablesState:
         """The active chip, or None for `all` (or a key the kind no longer has)."""
         key = self.active_chip.get(tab, ALL_CHIP)
         return next((c for c in self.kinds[tab].chips if c.key == key), None)
+
+    def chip_label(self, tab: TabID) -> str:
+        """Display label of the active chip (`in use`); `all` when none."""
+        chip = self._active_chip(tab)
+        return chip.label if chip is not None else ALL_CHIP
 
     def chip_keys(self, tab: TabID) -> list[str]:
         """Chip keys in cycle order, `all` first."""
@@ -318,6 +334,12 @@ class TablesState:
         return rows
 
     # --- Sort ----------------------------------------------------------------
+
+    def _default_sort(self, tab: TabID) -> SortState | None:
+        default = DEFAULT_SORT.get(tab)
+        if default is not None and default[0] in self.kinds[tab].sort_keys:
+            return default
+        return None
 
     def sort(self, tab: TabID) -> SortState | None:
         return self.sort_state.get(tab)

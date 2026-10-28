@@ -35,6 +35,14 @@ from docksurf_py.core.models import (
 )
 from docksurf_py.core.paths import DATA_DIR
 from docksurf_py.core.render.containers import NAME_WIDTH, age_seconds
+from docksurf_py.core.render.images import (
+    CREATED_WIDTH,
+    REPO_WIDTH,
+    SIZE_WIDTH,
+    STATUS_WIDTH,
+    TAG_WIDTH,
+    status_rank,
+)
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.session import SessionState, load_session, save_session
 from docksurf_py.core.state.details import DetailCache, LiveTargets
@@ -49,6 +57,7 @@ from docksurf_py.core.state.refresh import RefreshCoordinator
 from docksurf_py.core.state.status import STATE_SORT_ORDER, classify
 from docksurf_py.core.state.tables import (
     CONTAINER_CHIPS,
+    IMAGE_CHIPS,
     ResourceKind,
     TablesState,
     matches_container,
@@ -57,7 +66,7 @@ from docksurf_py.core.state.tables import (
     matches_volume,
 )
 from docksurf_py.core.state.view import ViewState
-from docksurf_py.core.types import LogOptions, TabID
+from docksurf_py.core.types import LogOptions, SafeMarkup, TabID
 from docksurf_py.tui.actions import (
     ClipboardHandler,
     ComposeActionHandler,
@@ -87,6 +96,7 @@ from docksurf_py.tui.ids import (
     REFRESH_LOADING_ID,
     SEARCH_BAR_ID,
     SIDE_COLUMN_ID,
+    TOOLBAR_LINE_ID,
     TOP_BAR_ID,
     TableID,
 )
@@ -115,6 +125,7 @@ from docksurf_py.tui.widgets import (
     LogPane,
     NetworkTable,
     SearchBar,
+    ToolbarLine,
     TopBar,
     VolumeTable,
     WhaleScreen,
@@ -180,6 +191,10 @@ class ResourceEntry:
     show_details: Callable[[DetailPane, int], None]
     column_widths: dict[str, int] = field(default_factory=dict)
     cursor_gutter: bool = False  # draw `▌` in the leading column under the cursor
+    # Columns whose header is right-aligned over right-aligned cells.
+    right_columns: frozenset[str] = frozenset()
+    # One-line summary above the filter row, built for a width (None: no line).
+    toolbar_line: Callable[[int], SafeMarkup] | None = None
 
     @property
     def label(self) -> str:
@@ -230,6 +245,10 @@ class AppContext(Protocol):
     def _sync_stats(self) -> None: ...
     def _sync_top(self) -> None: ...
     def _sync_image_architecture(self) -> None: ...
+    def _sync_system_df(self) -> None: ...
+    def _apply_system_df(self, df: Any) -> None: ...
+    def _repaint_toolbar_line(self) -> None: ...
+    def _images_toolbar_line(self, width: int) -> SafeMarkup: ...
     def _sync_side_logs(self) -> None: ...
     def _sync_log_layout(self) -> None: ...
     def _exit_logs_full(self) -> None: ...
@@ -433,14 +452,25 @@ class DockSurfApp(
                         "Repository": lambda i: i.repository.lower(),
                         "Tag": lambda i: i.tag.lower(),
                         "Size": lambda i: i.size_bytes,
-                        "Status": lambda i: bool(i.used_by),
+                        "Created": lambda i: i.created,
+                        "Status": status_rank,
                     },
+                    chips=IMAGE_CHIPS,
                 ),
                 table_id=TableID.IMAGES,
-                columns=("Repository", "Tag", "Size", "Status"),
+                columns=("Repository", "Tag", "Size", "Created", "Status"),
                 populate=self._populate_image_table,
                 show_details=self._show_image_details,
-                column_widths={"Tag": 10, "Size": 9, "Status": 8},
+                column_widths={
+                    "Repository": REPO_WIDTH,
+                    "Tag": TAG_WIDTH,
+                    "Size": SIZE_WIDTH,
+                    "Created": CREATED_WIDTH,
+                    "Status": STATUS_WIDTH,
+                },
+                right_columns=frozenset({"Size"}),
+                cursor_gutter=True,
+                toolbar_line=self._images_toolbar_line,
             ),
             TabID.VOLUMES: ResourceEntry(
                 kind=ResourceKind(
@@ -484,6 +514,7 @@ class DockSurfApp(
         yield Static("", id=CONNECTION_BANNER_ID)
         with Horizontal(id=MAIN_CONTAINER_ID):
             with Vertical(id=LIST_PANEL_ID, classes="panel"):
+                yield ToolbarLine(id=TOOLBAR_LINE_ID)
                 with Horizontal(id=LIST_TOOLBAR_ID):
                     yield SearchBar(
                         placeholder=FILTER_PLACEHOLDERS[TabID.CONTAINERS],
@@ -653,6 +684,8 @@ class DockSurfApp(
         self._sync_log_layout()
         self._auto_select_first()
         self._repaint_chrome()
+        if active in (TabID.IMAGES, TabID.VOLUMES):
+            self._sync_system_df()
         if self._persist_session:
             self._session.active_tab = active
             save_session(self._session)

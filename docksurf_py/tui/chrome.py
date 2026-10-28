@@ -21,18 +21,20 @@ from docksurf_py.core.render.chrome import (
     tab_summaries,
     top_bar,
 )
+from docksurf_py.core.render.observability import images_disk_line
 from docksurf_py.core.state.status import RunState, classify
 from docksurf_py.core.state.view import LayoutMode
-from docksurf_py.core.types import TabID
+from docksurf_py.core.types import SafeMarkup, TabID
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
     CHIP_BAR_ID,
     FILTER_PLACEHOLDERS,
     LIST_PANEL_ID,
     SEARCH_BAR_ID,
+    TOOLBAR_LINE_ID,
     TOP_BAR_ID,
 )
-from docksurf_py.tui.widgets import BottomBar, ChipBar, SearchBar, TopBar
+from docksurf_py.tui.widgets import BottomBar, ChipBar, SearchBar, ToolbarLine, TopBar
 
 if TYPE_CHECKING:
     from docksurf_py.tui.app import AppContext
@@ -135,6 +137,24 @@ class ChromeController(_Base):
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", SearchBar)
         search_bar.placeholder = FILTER_PLACEHOLDERS[active]
         self._repaint_chip_bar(active, search_bar.value)
+        self._repaint_toolbar_line()
+
+    def _repaint_toolbar_line(self) -> None:
+        """The active tab's summary line above the filter, hidden if it has none."""
+        if not self.is_running:
+            return
+        active = TabID(self.query_one(TabbedContent).active)
+        build = self._resource_registry[active].toolbar_line
+        line = self.query_one(f"#{TOOLBAR_LINE_ID}", ToolbarLine)
+        line.display = build is not None and self.snapshot is not None
+        if build is not None:
+            line.set_builder(build)
+
+    def _images_toolbar_line(self, width: int) -> SafeMarkup:
+        images = self.snapshot.images if self.snapshot is not None else []
+        return images_disk_line(
+            self._details.system_df, images, width, self._view.palette
+        )
 
     def _repaint_chip_bar(self, active: TabID, query: str) -> None:
         chips = self._resource_registry[active].kind.chips

@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from docksurf_py.core.docker import format_size
-from docksurf_py.core.models import ContainerTop, SystemDf
+from docksurf_py.core.models import ContainerTop, Image, SystemDf
 from docksurf_py.core.render.containers import gauge
 from docksurf_py.core.render.palette import Palette, fg
 from docksurf_py.core.state.stats import StatsHistory
@@ -128,6 +128,96 @@ def render_top(top: ContainerTop, name: str) -> Panel:
         border_style="dim",
         box=box.MINIMAL,
     )
+
+
+def split_bar(
+    used: int, reclaimable: int, width: int, p: Palette, *, approximate: bool = False
+) -> SafeMarkup:
+    """`━━━━━━━━━━━━` split into an in-use part (`success`) and a reclaimable
+    part (`warning`), proportional to the two sizes. A non-zero part always
+    gets at least one cell. `approximate` draws the whole bar `faint` (the
+    figures are a guess, not `docker system df`)."""
+    if width <= 0:
+        return SafeMarkup("")
+    total = used + reclaimable
+    if total <= 0:
+        return fg(p, "faint", "━" * width)
+    reclaim_cells = round(reclaimable / total * width)
+    if reclaimable > 0:
+        reclaim_cells = max(1, reclaim_cells)
+    if used > 0:
+        reclaim_cells = min(reclaim_cells, width - 1)
+    used_cells = width - reclaim_cells
+    if approximate:
+        return fg(p, "faint", "━" * width)
+    return SafeMarkup(
+        (fg(p, "success", "━" * used_cells) if used_cells else "")
+        + (fg(p, "warning", "━" * reclaim_cells) if reclaim_cells else "")
+    )
+
+
+def images_disk_usage(
+    df: SystemDf | None, images: Sequence[Image]
+) -> tuple[int, int, bool]:
+    """`(total, reclaimable, approximate)` bytes for the Images disk line.
+
+    From the cached `docker system df` "Images" entry when known. Otherwise
+    the snapshot's per-image sizes are summed — which double-counts shared
+    layers, hence `approximate`.
+    """
+    if df is not None:
+        for entry in df.entries:
+            if entry.kind == "Images":
+                return entry.size_bytes, entry.reclaimable_bytes, False
+    total = sum(i.size_bytes for i in images)
+    reclaimable = sum(i.size_bytes for i in images if not i.used_by)
+    return total, reclaimable, True
+
+
+_DISK_BAR_MIN = 8
+_DISK_BAR_MAX = 60
+
+
+def images_disk_line(
+    df: SystemDf | None, images: Sequence[Image], width: int, p: Palette
+) -> SafeMarkup:
+    """`62.4 GB on disk  ━━━━━━  ■ in use 20.6 GB  ■ reclaimable 41.8 GB  P prune`.
+
+    The bar takes the width the text leaves over (clamped); when even the
+    minimum bar doesn't fit, the bar and then the legend are dropped.
+    """
+    total, reclaimable, approx = images_disk_usage(df, images)
+    approx_mark = "≈" if approx else ""
+    head = f"{approx_mark}{format_size(total)} on disk"
+    legend_plain = (
+        f"■ in use {format_size(total - reclaimable)}"
+        f"  ■ reclaimable {format_size(reclaimable)}"
+    )
+    tail_plain = "P prune"
+    gap = 3
+    bar_width = width - len(head) - len(legend_plain) - len(tail_plain) - gap * 3
+    legend = SafeMarkup(
+        fg(p, "success", "■")
+        + fg(p, "muted", f" in use {format_size(total - reclaimable)}")
+        + "  "
+        + fg(p, "warning", "■")
+        + fg(p, "muted", f" reclaimable {format_size(reclaimable)}")
+    )
+    tail = SafeMarkup(fg(p, "strong", "P") + fg(p, "muted", " prune"))
+    head_markup = fg(p, "foreground", head)
+    sep = " " * gap
+    if bar_width < _DISK_BAR_MIN:
+        if width >= len(head) + gap + len(legend_plain):
+            return SafeMarkup(f"{head_markup}{sep}{legend}")
+        return head_markup
+    bar = split_bar(
+        total - reclaimable,
+        reclaimable,
+        min(bar_width, _DISK_BAR_MAX),
+        p,
+        approximate=approx,
+    )
+    return SafeMarkup(f"{head_markup}{sep}{bar}{sep}{legend}{sep}{tail}")
 
 
 def render_df(df: SystemDf) -> Table:

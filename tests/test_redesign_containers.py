@@ -135,10 +135,11 @@ class TintAndGutterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sum("▌" in g for g in gutter), 1)
             self.assertIn("▌", gutter[table.cursor_row])
 
-    async def test_other_tabs_have_no_cursor_gutter(self) -> None:
+    async def test_tabs_not_yet_redesigned_have_no_cursor_gutter(self) -> None:
         app = DockSurfApp(docker=MockDockerService(_snapshot))
         async with app.run_test(size=(160, 30)):
-            self.assertFalse(app._resource_registry[TabID.IMAGES].cursor_gutter)
+            for tab in (TabID.VOLUMES, TabID.NETWORKS):
+                self.assertFalse(app._resource_registry[tab].cursor_gutter)
 
 
 class ChipTests(unittest.IsolatedAsyncioTestCase):
@@ -178,7 +179,9 @@ class ChipTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app._tables.active_chip[TabID.CONTAINERS], "stopped")
             self.assertEqual(table.row_count, 2)
 
-    async def test_empty_chip_shows_a_message_and_f_is_inert_on_images(self) -> None:
+    async def test_empty_chip_shows_a_message_and_f_is_inert_without_chips(
+        self,
+    ) -> None:
         snapshot = _snapshot()
         snapshot.containers = [make_container("solo")]
         app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
@@ -189,11 +192,11 @@ class ChipTests(unittest.IsolatedAsyncioTestCase):
             empty = app.query_one(f"#{EMPTY_STATE_IDS[TabID.CONTAINERS]}", Static)
             self.assertTrue(empty.display)
             self.assertIn("No failed containers", str(empty.content))
-            app.query_one(TabbedContent).active = TabID.IMAGES
+            app.query_one(TabbedContent).active = TabID.NETWORKS
             await pilot.pause()
             await pilot.press("F")
             await pilot.pause()
-            self.assertEqual(app._tables.active_chip[TabID.IMAGES], "all")
+            self.assertEqual(app._tables.active_chip[TabID.NETWORKS], "all")
 
 
 def _card_snapshot() -> DockerSnapshot:

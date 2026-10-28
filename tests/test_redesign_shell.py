@@ -341,9 +341,12 @@ class PanelTitleTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(140, 30)) as pilot:
             await _ready(app, pilot, TabID.IMAGES)
             panel = app.query_one(f"#{LIST_PANEL_ID}")
-            self.assertEqual(panel.border_title, "images · 2")
+            # Images start sorted largest first (no saved session).
+            self.assertEqual(panel.border_title, "images · 2 · sorted by size ▾")
             await pilot.press("slash", "r", "e", "d")
-            await wait_until(lambda: panel.border_title == "images · 1 of 2")
+            await wait_until(
+                lambda: panel.border_title == "images · 1 of 2 · sorted by size ▾"
+            )
             app._tables.cycle_sort(TabID.IMAGES, "Size")
             app._repaint_list_panel()
             self.assertEqual(panel.border_title, "images · 1 of 2 · sorted by size ▴")

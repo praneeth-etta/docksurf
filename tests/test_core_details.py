@@ -3,7 +3,13 @@ container the stats stream / process list follow. Plain pytest, no Textual."""
 
 import unittest
 
-from docksurf_py.core.models import ComposeProject, ContainerDetail, ContainerTop
+from docksurf_py.core.models import (
+    ComposeProject,
+    ContainerDetail,
+    ContainerTop,
+    DiskUsageEntry,
+    SystemDf,
+)
 from docksurf_py.core.state.details import DetailCache, LiveTargets
 from tests.test_compose import make_container
 
@@ -23,6 +29,51 @@ class ContainerDetailStoreTests(unittest.TestCase):
         self.assertTrue(cache.store_container_detail("c1", changed))
         self.assertFalse(cache.store_container_detail("c1", None))  # failed fetch
         self.assertEqual(cache.container_detail("c1"), changed)
+
+
+def _df(size: int = 100) -> SystemDf:
+    entry = DiskUsageEntry("Images", 2, 1, size, size // 2)
+    return SystemDf(entries=[entry], total_size=size, total_reclaimable=size // 2)
+
+
+class SystemDfCacheTests(unittest.TestCase):
+    def test_first_want_then_deduped_in_flight(self) -> None:
+        cache = DetailCache()
+        self.assertTrue(cache.want_system_df(100.0))
+        self.assertFalse(cache.want_system_df(100.0))  # in flight
+
+    def test_fresh_result_is_not_refetched_until_max_age(self) -> None:
+        cache = DetailCache()
+        cache.want_system_df(100.0)
+        self.assertTrue(cache.store_system_df(_df(), 100.0))
+        self.assertFalse(cache.want_system_df(130.0))
+        self.assertTrue(cache.want_system_df(160.0))
+
+    def test_stale_flag_refetches_after_min_age_only(self) -> None:
+        cache = DetailCache()
+        cache.want_system_df(100.0)
+        cache.store_system_df(_df(), 100.0)
+        cache.mark_system_df_stale()
+        self.assertFalse(cache.want_system_df(102.0))  # too soon
+        self.assertTrue(cache.want_system_df(106.0))
+        cache.store_system_df(_df(200), 106.0)
+        self.assertFalse(cache.want_system_df(120.0))  # stale flag cleared
+
+    def test_failed_or_empty_fetch_keeps_last_value_and_clears_in_flight(self) -> None:
+        cache = DetailCache()
+        cache.want_system_df(100.0)
+        cache.store_system_df(_df(), 100.0)
+        self.assertTrue(cache.want_system_df(200.0))
+        self.assertFalse(cache.store_system_df(None, 200.0))
+        self.assertFalse(cache.store_system_df(SystemDf([], 0, 0), 200.0))
+        self.assertEqual(cache.system_df, _df())
+        self.assertTrue(cache.want_system_df(200.0))  # retry allowed
+
+    def test_unchanged_result_reports_no_change(self) -> None:
+        cache = DetailCache()
+        cache.store_system_df(_df(), 100.0)
+        self.assertFalse(cache.store_system_df(_df(), 200.0))
+        self.assertEqual(cache.system_df_at, 200.0)
 
 
 class DetailCacheTests(unittest.TestCase):

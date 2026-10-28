@@ -15,8 +15,14 @@ from docksurf_py.core.models import (
     Container,
     ContainerDetail,
     ContainerTop,
+    SystemDf,
 )
 from docksurf_py.core.state.stats import StatsHistory
+
+# `docker system df` can take seconds, so it is cached and refetched sparingly.
+SYSTEM_DF_MAX_AGE = 60.0
+# A stale flag (an image/volume event) never forces a refetch sooner than this.
+SYSTEM_DF_MIN_AGE = 5.0
 
 
 class DetailCache:
@@ -30,6 +36,11 @@ class DetailCache:
         self.container_details: dict[str, ContainerDetail] = {}
         # Whether secret-looking env values are shown unmasked (`R`).
         self.reveal_secrets = False
+        # Last `docker system df` result and the monotonic time it was stored.
+        self.system_df: SystemDf | None = None
+        self.system_df_at: float = 0.0
+        self._system_df_stale = False
+        self._system_df_in_flight = False
         self._detail_in_flight: str | None = None
         self._architecture_in_flight: str | None = None
 
@@ -40,6 +51,44 @@ class DetailCache:
 
     def volume_size(self, name: str) -> int | None:
         return self.volume_sizes.get(name)
+
+    # --- System df -----------------------------------------------------------
+
+    def want_system_df(self, now: float, max_age: float = SYSTEM_DF_MAX_AGE) -> bool:
+        """True (and marks it in flight) if `docker system df` should be fetched
+        now: never fetched, older than `max_age`, or flagged stale by an event
+        and at least `SYSTEM_DF_MIN_AGE` old. Never while one is in flight."""
+        if self._system_df_in_flight:
+            return False
+        age = now - self.system_df_at
+        if (
+            self.system_df is None
+            or age >= max_age
+            or (self._system_df_stale and age >= SYSTEM_DF_MIN_AGE)
+        ):
+            self._system_df_in_flight = True
+            return True
+        return False
+
+    def mark_system_df_stale(self) -> None:
+        """An image/volume-changing event arrived; refetch on next tab entry."""
+        self._system_df_stale = True
+
+    def store_system_df(self, df: SystemDf | None, now: float) -> bool:
+        """Cache a fetched result; True if it differs from what was cached.
+
+        A failed fetch (`None`) keeps the last known value and clears the
+        in-flight flag. An empty result is treated as a failure too, since
+        `DockerClient.system_df` returns empty entries when it can't compute.
+        """
+        self._system_df_in_flight = False
+        if df is None or not df.entries:
+            return False
+        changed = df != self.system_df
+        self.system_df = df
+        self.system_df_at = now
+        self._system_df_stale = False
+        return changed
 
     # --- Image architecture --------------------------------------------------
 

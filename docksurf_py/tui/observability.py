@@ -162,7 +162,23 @@ class LiveStatsController(_Base):
                 self.notify, "Could not compute disk usage", severity="error"
             )
             return
+        self.call_from_thread(self._apply_system_df, df)
         self.call_from_thread(self.push_screen, SystemDfScreen(render_df(df)))
+
+    def _sync_system_df(self) -> None:
+        """Fetch `docker system df` for the Images/Volumes disk figures if the
+        cache wants it (first use, older than a minute, or flagged by events)."""
+        if self._details.want_system_df(time.monotonic()):
+            self._fetch_system_df()
+
+    @work(thread=True)
+    def _fetch_system_df(self) -> None:
+        df: SystemDf = self.docker.system_df()
+        self.call_from_thread(self._apply_system_df, df)
+
+    def _apply_system_df(self, df: SystemDf | None) -> None:
+        if self._details.store_system_df(df, time.monotonic()):
+            self._repaint_toolbar_line()
 
     # --- `t`: on-demand running-process snapshot ---
 

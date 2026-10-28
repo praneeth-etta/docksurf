@@ -35,6 +35,7 @@ from docksurf_py.tui.widgets.tables import (
     NetworkTable,
     VolumeTable,
 )
+from docksurf_py.tui.widgets.toolbar_line import ToolbarLine
 from docksurf_py.tui.widgets.top_bar import TopBar
 from docksurf_py.tui.widgets.whale_screen import WhaleScreen
 
@@ -64,5 +65,6 @@ __all__ = [
     "SearchBar",
     "BottomBar",
     "ChipBar",
+    "ToolbarLine",
     "TopBar",
 ]
