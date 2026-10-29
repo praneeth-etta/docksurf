@@ -17,8 +17,13 @@ from docksurf_py.core.render.images import (
     SIZE_WIDTH,
     RepoParts,
     compact_relative,
+    containers_using_image,
     image_row_cells,
     image_status,
+    image_tags,
+    images_footer,
+    marked_size,
+    marked_summary,
     repository_cell,
     split_repository,
     status_rank,
@@ -436,3 +441,80 @@ class ImageStatusAndRowTests(unittest.TestCase):
         self.assertLessEqual(len(Text.from_markup(long_tag).plain), 12)
         none_tag = image_row_cells(self._img(tag="<none>"), self.p, NOW)[1]
         self.assertIn(self.p.muted, none_tag)
+
+
+class MarkedSummaryTests(unittest.TestCase):
+    p = TIDE_PALETTE
+
+    @staticmethod
+    def _img(image_id: str, tag: str, size: int) -> Image:
+        return Image(image_id, "app", tag, size, False, [], "")
+
+    def test_size_counts_each_image_id_once(self) -> None:
+        items = [
+            self._img("sha256:a", "latest", 100),
+            self._img("sha256:a", "1.0", 100),  # second tag of the same image
+            self._img("sha256:b", "old", 50),
+        ]
+        self.assertEqual(marked_size(items), 150)
+        self.assertEqual(marked_size([]), 0)
+
+    def test_summary_counts_rows_but_sums_distinct_images(self) -> None:
+        gb = 1024**3
+        items = [self._img("sha256:a", "x", 2 * gb), self._img("sha256:a", "y", 2 * gb)]
+        self.assertEqual(
+            Text.from_markup(marked_summary(items, self.p)).plain, "✓ 2 marked · 2.00GB"
+        )
+
+    def test_footer_without_marks_is_the_registry_note(self) -> None:
+        self.assertEqual(
+            Text.from_markup(images_footer([], self.p)).plain,
+            "registry prefixes shortened · full name in detail",
+        )
+
+    def test_footer_with_marks_lists_the_actions(self) -> None:
+        plain = Text.from_markup(
+            images_footer([self._img("sha256:a", "x", 1024**3)], self.p)
+        ).plain
+        self.assertEqual(
+            plain,
+            "✓ 1 marked · 1.00GB · d delete marked   a mark dangling   esc clear",
+        )
+
+
+class ImageRelationTests(unittest.TestCase):
+    @staticmethod
+    def _img(image_id: str, repo: str, tag: str, dangling: bool = False) -> Image:
+        return Image(image_id, repo, tag, 1, dangling, [], "")
+
+    def test_tags_of_the_same_image_id_only(self) -> None:
+        images = [
+            self._img("sha256:a", "app", "latest"),
+            self._img("sha256:a", "app", "1.0"),
+            self._img("sha256:a", "mirror/app", "latest"),
+            self._img("sha256:b", "app", "other"),
+            self._img("sha256:a", "app", "latest"),  # duplicate row
+        ]
+        self.assertEqual(
+            image_tags(images[0], images), ["latest", "1.0", "mirror/app:latest"]
+        )
+
+    def test_untagged_images_have_no_tags(self) -> None:
+        dangling = self._img("sha256:d", "<none>", "<none>", dangling=True)
+        self.assertEqual(image_tags(dangling, [dangling]), [])
+
+    def test_containers_match_by_image_id_or_used_by_name(self) -> None:
+        image = self._img("img", "app", "latest")
+        image.used_by.append("legacy")
+        by_id = make_container("by-id")  # make_container uses image_id "img"
+        by_name = make_container("legacy")
+        by_name.image_id = "other"
+        unrelated = make_container("unrelated")
+        unrelated.image_id = "other"
+        self.assertEqual(
+            [
+                c.name
+                for c in containers_using_image(image, [by_id, by_name, unrelated])
+            ],
+            ["by-id", "legacy"],
+        )

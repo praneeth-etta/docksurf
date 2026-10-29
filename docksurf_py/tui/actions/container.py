@@ -89,7 +89,7 @@ class ContainerActionHandler(_Base):
         """Lazily fetch or refresh the focused container's detail-only fields
         (env, health log, precise start time, restart count).
 
-        Unlike `ImageActionHandler._sync_image_architecture`, this always
+        Unlike `ImageActionHandler._sync_image_platform`, this always
         re-fetches because these fields can change while a container remains
         selected. `DetailCache.want_container_detail` only prevents duplicate
         in-flight fetches for the same container.

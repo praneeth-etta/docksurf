@@ -8,6 +8,7 @@ from docksurf_py.core.models import (
     ContainerDetail,
     ContainerTop,
     DiskUsageEntry,
+    ImagePlatform,
     SystemDf,
 )
 from docksurf_py.core.state.details import DetailCache, LiveTargets
@@ -77,15 +78,22 @@ class SystemDfCacheTests(unittest.TestCase):
 
 
 class DetailCacheTests(unittest.TestCase):
-    def test_architecture_fetched_once_and_deduped_in_flight(self) -> None:
+    def test_platform_fetched_once_and_deduped_in_flight(self) -> None:
         cache = DetailCache()
-        self.assertEqual(cache.architecture("img"), "…")
-        self.assertTrue(cache.want_architecture("img"))
-        self.assertFalse(cache.want_architecture("img"))  # in flight
-        cache.store_architecture("img", None)
-        self.assertEqual(cache.architecture("img"), "unknown")
-        self.assertFalse(cache.want_architecture("img"))  # cached
-        self.assertFalse(cache.want_architecture(None))
+        self.assertIsNone(cache.platform("img"))  # pending
+        self.assertTrue(cache.want_platform("img"))
+        self.assertFalse(cache.want_platform("img"))  # in flight
+        cache.store_platform("img", ImagePlatform("arm64", "linux"))
+        self.assertEqual(cache.platform("img"), ImagePlatform("arm64", "linux"))
+        self.assertFalse(cache.want_platform("img"))  # cached
+        self.assertFalse(cache.want_platform(None))
+
+    def test_failed_platform_fetch_is_cached_as_unknown(self) -> None:
+        cache = DetailCache()
+        cache.want_platform("img")
+        cache.store_platform("img", None)
+        self.assertEqual(cache.platform("img"), ImagePlatform("unknown", "unknown"))
+        self.assertFalse(cache.want_platform("img"))
 
     def test_container_detail_refetches_but_dedupes_in_flight(self) -> None:
         cache = DetailCache()
@@ -93,7 +101,7 @@ class DetailCacheTests(unittest.TestCase):
         self.assertFalse(cache.want_container_detail("c1"))
         cache.store_container_detail("c1", _detail())
         self.assertEqual(cache.container_detail("c1"), _detail())
-        # Unlike architecture, a stored detail doesn't stop a refetch.
+        # Unlike the platform, a stored detail doesn't stop a refetch.
         self.assertTrue(cache.want_container_detail("c1"))
 
     def test_failed_detail_fetch_keeps_last_known_value(self) -> None:

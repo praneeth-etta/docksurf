@@ -242,8 +242,8 @@ class DockerResourceFetcher:
     def get_images(self, image_summaries: list[dict] | None = None) -> list[Image]:
         """Build `Image` rows from `/images/json` summaries.
 
-        Avoids per-image inspect; `Architecture` is fetched lazily via
-        `DockerClient.image_architecture`.
+        Avoids per-image inspect; `Architecture`/`Os` are fetched lazily via
+        `DockerClient.image_platform`.
         `image_summaries` lets snapshot refreshes share one listing with
         `get_containers`; `None` fetches it on demand.
         """

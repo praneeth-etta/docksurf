@@ -50,6 +50,7 @@ class SelectionHandler(_Base):
         table.update_cell_at(Coordinate(row, 0), self._gutter_cell(active, item, True))
         self._retint_row(table, active, row)
         self._repaint_bottom_bar()
+        self._repaint_footer()
 
         # Advance the cursor — mark-and-move, k9s-style rapid selection.
         if row + 1 < table.row_count:

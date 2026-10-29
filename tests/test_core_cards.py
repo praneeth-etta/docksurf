@@ -9,11 +9,14 @@ from docksurf_py.core.models import (
     ContainerDetail,
     ContainerTop,
     HealthProbe,
+    Image,
+    ImagePlatform,
     PortBinding,
 )
 from docksurf_py.core.render.cards import (
     CardModel,
     container_card,
+    image_card,
     project_card,
     section_rule,
 )
@@ -232,3 +235,84 @@ class ProjectCardTests(unittest.TestCase):
     def test_empty_project(self) -> None:
         card = project_card(ComposeProject("x", [], "", ""), P)
         self.assertIn("0/0 UP", _plain(card.body))
+
+
+def _image(**kw) -> Image:
+    base = dict(
+        id="sha256:944fc84f56cfaaaaaaaa",
+        repository="shop-app",
+        tag="latest",
+        size_bytes=2 * 1024**3,
+        is_dangling=False,
+        used_by=[],
+        created="",
+    )
+    base.update(kw)
+    return Image(**base)  # type: ignore[arg-type]
+
+
+class ImageCardTests(unittest.TestCase):
+    linux = ImagePlatform("amd64", "linux")
+
+    def _card(self, image=None, platform=None, tags=("latest",), containers=()):
+        return image_card(image or _image(), platform, list(tags), list(containers), P)
+
+    def test_title_names_the_full_reference(self) -> None:
+        card = self._card(_image(repository="ghcr.io/org/tool", tag="1.2"))
+        self.assertIn("ghcr.io/org/tool:1.2 · image", card.title)
+
+    def test_pills_and_facts_for_an_in_use_image(self) -> None:
+        c = make_container("web")
+        text = _plain(
+            self._card(_image(used_by=["web"]), self.linux, containers=[c]).body
+        )
+        first = text.splitlines()[0]
+        for part in ("IN USE", "amd64", "linux", "2.00GB", "created"):
+            self.assertIn(part, first)
+
+    def test_status_pill_per_state(self) -> None:
+        self.assertIn("UNUSED", _plain(self._card().body))
+        dangling = _image(repository="<none>", tag="<none>", is_dangling=True)
+        self.assertIn("DANGLING", _plain(self._card(dangling).body))
+
+    def test_platform_pending_shows_ellipses(self) -> None:
+        first = _plain(self._card(platform=None).body).splitlines()[0]
+        self.assertEqual(first.count("…"), 2)
+
+    def test_id_and_every_tag_with_their_hints(self) -> None:
+        text = _plain(self._card(tags=("latest", "1.27")).body)
+        self.assertIn("sha256:944fc84f56cf", text)
+        self.assertNotIn("sha256:944fc84f56cfa", text)  # 12 hex chars only
+        self.assertIn("i inspect", text)
+        self.assertIn("latest, 1.27", text)
+        self.assertIn("y tag", text)
+
+    def test_no_tags_for_a_dangling_image(self) -> None:
+        self.assertIn("none", _plain(self._card(tags=()).body))
+
+    def test_used_by_lists_containers_with_one_jump_hint(self) -> None:
+        web = make_container("shop-web-1", project="shop", service="web")
+        job = make_container("job", running=False)
+        text = _plain(
+            self._card(
+                _image(used_by=["shop-web-1", "job"]), containers=[web, job]
+            ).body
+        )
+        self.assertIn("USED BY", text)
+        self.assertIn("shop-web-1", text)
+        self.assertIn("shop › web · running", text)
+        self.assertIn("job", text)
+        self.assertEqual(text.count("⏎ jump"), 1)
+        self.assertLess(text.index("⏎ jump"), text.index("job"))
+
+    def test_used_by_is_empty_for_an_unused_image(self) -> None:
+        text = _plain(self._card().body)
+        self.assertIn("USED BY", text)
+        self.assertNotIn("⏎ jump", text)
+
+    def test_card_has_no_sections_and_a_stable_key(self) -> None:
+        card = self._card()
+        self.assertEqual(card.sections, ())
+        self.assertEqual(card.key, self._card().key)
+        other = self._card(_image(tag="1.0"))
+        self.assertNotEqual(card.key, other.key)  # per tag row

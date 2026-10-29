@@ -52,6 +52,7 @@ from docksurf_py.core.models import (
     ContextInfo,
     DockerSnapshot,
     ImageLayer,
+    ImagePlatform,
     SystemDf,
 )
 from docksurf_py.core.types import LogOptions
@@ -360,24 +361,28 @@ class DockerClient:
             )
         return layers
 
-    def image_architecture(self, image_id: str) -> str | None:
-        """One image's `Architecture` — `None` on error.
+    def image_platform(self, image_id: str) -> ImagePlatform | None:
+        """One image's `Architecture` and `Os` — `None` on error.
 
         `get_images()` no longer inspects every image eagerly (see
         `fetcher.py`), so this is the on-demand replacement, fetched lazily
-        when an image's detail pane is shown. Mirrors `container_top`'s
+        when an image's detail card is shown. Mirrors `container_top`'s
         try/except shape.
         """
         if not self._sdk:
             return None
         try:
-            return self._sdk.images.get(image_id).attrs.get("Architecture")
+            attrs = self._sdk.images.get(image_id).attrs
         except NotFound:
-            logger.warning("Architecture: image %s not found", image_id)
+            logger.warning("Platform: image %s not found", image_id)
             return None
         except (APIError, DockerException, requests.exceptions.RequestException) as e:
-            logger.warning("Architecture lookup failed for %s: %s", image_id, e)
+            logger.warning("Platform lookup failed for %s: %s", image_id, e)
             return None
+        return ImagePlatform(
+            architecture=attrs.get("Architecture") or "unknown",
+            os=attrs.get("Os") or "unknown",
+        )
 
     def container_detail(self, container_id: str) -> ContainerDetail | None:
         """Detail-pane-only container fields — `None` on error.

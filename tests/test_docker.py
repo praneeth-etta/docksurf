@@ -14,6 +14,7 @@ from docksurf_py.core.models import (
     ContainerDetail,
     ContainerTop,
     DockerSnapshot,
+    ImagePlatform,
 )
 
 
@@ -982,20 +983,32 @@ class ImageWriteTests(unittest.TestCase):
         client = DockerClient()
         self.assertIsNone(client.image_history("sha256:x"))
 
-    def test_image_architecture_reads_attrs(self) -> None:
+    def test_image_platform_reads_architecture_and_os(self) -> None:
         client = self._client()
-        client._sdk.images.get.return_value.attrs = {"Architecture": "arm64"}
-        self.assertEqual(client.image_architecture("sha256:x"), "arm64")
+        client._sdk.images.get.return_value.attrs = {
+            "Architecture": "arm64",
+            "Os": "linux",
+        }
+        self.assertEqual(
+            client.image_platform("sha256:x"), ImagePlatform("arm64", "linux")
+        )
         client._sdk.images.get.assert_called_once_with("sha256:x")
 
-    def test_image_architecture_not_found_returns_none(self) -> None:
+    def test_image_platform_missing_fields_are_unknown(self) -> None:
+        client = self._client()
+        client._sdk.images.get.return_value.attrs = {}
+        self.assertEqual(
+            client.image_platform("sha256:x"), ImagePlatform("unknown", "unknown")
+        )
+
+    def test_image_platform_not_found_returns_none(self) -> None:
         client = self._client()
         client._sdk.images.get.side_effect = NotFound("no such image")
-        self.assertIsNone(client.image_architecture("sha256:x"))
+        self.assertIsNone(client.image_platform("sha256:x"))
 
-    def test_image_architecture_not_connected_returns_none(self) -> None:
+    def test_image_platform_not_connected_returns_none(self) -> None:
         client = DockerClient()
-        self.assertIsNone(client.image_architecture("sha256:x"))
+        self.assertIsNone(client.image_platform("sha256:x"))
 
 
 class VolumeWriteTests(unittest.TestCase):

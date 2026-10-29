@@ -3,15 +3,30 @@
 
 import unittest
 
+from rich.console import Console
 from rich.text import Text
+from textual.content import Content
 from textual.widgets import DataTable, Static, TabbedContent
 
-from docksurf_py.core.models import DiskUsageEntry, DockerSnapshot, Image, SystemDf
+from docksurf_py.core.models import (
+    DiskUsageEntry,
+    DockerSnapshot,
+    Image,
+    ImagePlatform,
+    SystemDf,
+)
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.app import DockSurfApp
-from docksurf_py.tui.ids import CHIP_BAR_ID, EMPTY_STATE_IDS, TOOLBAR_LINE_ID, TableID
+from docksurf_py.tui.ids import (
+    CHIP_BAR_ID,
+    EMPTY_STATE_IDS,
+    LIST_PANEL_ID,
+    TOOLBAR_LINE_ID,
+    TableID,
+)
 from docksurf_py.tui.widgets import ChipBar, ToolbarLine
 from tests.test_app import MockDockerService, _image, wait_until
+from tests.test_compose import make_container
 
 
 def _snapshot() -> DockerSnapshot:
@@ -209,3 +224,96 @@ class ImageColumnsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual({len(s) for s in sizes}, {12})  # right-aligned, padded
             gutter = Text.from_markup(table.get_row_at(table.cursor_row)[0]).plain
             self.assertEqual(gutter, "▌")
+
+
+class MarkedFooterTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _footer(app: DockSurfApp) -> str:
+        subtitle = app.query_one(f"#{LIST_PANEL_ID}").border_subtitle
+        return Content.from_markup(str(subtitle or "")).plain
+
+    async def _open(self, app: DockSurfApp, pilot) -> DataTable:
+        await pilot.pause()
+        await wait_until(lambda: app.snapshot is not None)
+        await pilot.press("2")
+        table = app.query_one(f"#{TableID.IMAGES}", DataTable)
+        await wait_until(lambda: table.row_count == 3)
+        return table
+
+    async def test_footer_follows_marks_and_deduplicates_shared_images(self) -> None:
+        snapshot = _chip_snapshot()
+        for image in snapshot.images:
+            image.size_bytes = 1024**2
+        snapshot.images[1] = Image("sha256:a", "app", "old", 1024**2, False, [], "")
+        app = DockSurfApp(docker=MockDockerService(lambda: snapshot))
+        async with app.run_test(size=(160, 30)) as pilot:
+            await self._open(app, pilot)
+            self.assertEqual(
+                self._footer(app), "registry prefixes shortened · full name in detail"
+            )
+            await pilot.press("space", "space")  # marks two rows, cursor moves on
+            await wait_until(lambda: "2 marked" in self._footer(app))
+            ids = {i.id for i in app._marked_items(TabID.IMAGES)}
+            expected = "1.00MB" if len(ids) == 1 else "2.00MB"
+            self.assertIn(f"✓ 2 marked · {expected}", self._footer(app))
+            self.assertIn("d delete marked", self._footer(app))
+            await pilot.press("escape")
+            await wait_until(lambda: "marked" not in self._footer(app).split("·")[0])
+            self.assertIn("registry prefixes shortened", self._footer(app))
+
+    async def test_mark_dangling_updates_the_footer(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(_chip_snapshot))
+        async with app.run_test(size=(160, 30)) as pilot:
+            await self._open(app, pilot)
+            await pilot.press("a")
+            await wait_until(lambda: "1 marked" in self._footer(app))
+
+    async def test_other_tabs_have_no_footer(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(_chip_snapshot))
+        async with app.run_test(size=(160, 30)) as pilot:
+            await self._open(app, pilot)
+            await pilot.press("3")
+            await wait_until(lambda: self._footer(app) == "")
+
+
+class ImageCardTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _snapshot() -> DockerSnapshot:
+        used = Image("img", "shop-app", "latest", 5000, False, ["web"], "")
+        also = Image("img", "shop-app", "1.0", 5000, False, ["web"], "")
+        return DockerSnapshot(
+            containers=[make_container("web", project="shop", service="web")],
+            images=[used, also],
+            volumes=[],
+            networks=[],
+        )
+
+    @staticmethod
+    def _text(app: DockSurfApp) -> str:
+        pane = app.query_one("#detail-pane")
+        console = Console(width=80, no_color=True, highlight=False)
+        with console.capture() as cap:
+            console.print(pane._panel.content)
+        return cap.get()
+
+    async def test_card_shows_platform_tags_and_used_by_once_settled(self) -> None:
+        svc = MockDockerService(self._snapshot)
+        svc.platform_map["img"] = ImagePlatform("arm64", "linux")
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await wait_until(lambda: app.snapshot is not None)
+            await pilot.press("2")
+            await wait_until(lambda: "arm64" in self._text(app), timeout=4.0)
+            text = self._text(app)
+            self.assertIn("IN USE", text)
+            self.assertIn("linux", text)
+            self.assertIn("latest, 1.0", text)
+            self.assertIn("shop › web", text)
+            self.assertIn("⏎ jump", text)
+            pane = app.query_one("#detail-pane")
+            self.assertIn("shop-app:", str(pane.border_title))
+            self.assertEqual(
+                [c for c in svc.calls if c[0] == "image_platform"],
+                [("image_platform", "img")],  # one fetch for both tag rows
+            )

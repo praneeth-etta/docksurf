@@ -15,6 +15,7 @@ from docksurf_py.core.models import (
     Container,
     ContainerDetail,
     ContainerTop,
+    ImagePlatform,
     SystemDf,
 )
 from docksurf_py.core.state.stats import StatsHistory
@@ -29,8 +30,8 @@ class DetailCache:
     def __init__(self) -> None:
         # On-demand per-volume disk sizes (the `b` action), keyed by name.
         self.volume_sizes: dict[str, int] = {}
-        # Per-image Architecture, keyed by image id; fetched once per image.
-        self.image_architectures: dict[str, str] = {}
+        # Per-image Architecture/Os, keyed by image id; fetched once per image.
+        self.image_platforms: dict[str, ImagePlatform] = {}
         # Container env/health/start/restart detail, keyed by container id.
         # Refetched on selection, but kept so the pane shows last-known values.
         self.container_details: dict[str, ContainerDetail] = {}
@@ -42,7 +43,7 @@ class DetailCache:
         self._system_df_stale = False
         self._system_df_in_flight = False
         self._detail_in_flight: str | None = None
-        self._architecture_in_flight: str | None = None
+        self._platform_in_flight: str | None = None
 
     # --- Volume sizes --------------------------------------------------------
 
@@ -90,26 +91,28 @@ class DetailCache:
         self._system_df_stale = False
         return changed
 
-    # --- Image architecture --------------------------------------------------
+    # --- Image platform ------------------------------------------------------
 
-    def want_architecture(self, image_id: str | None) -> bool:
-        """True (and marks it in flight) if `image_id`'s architecture should be
+    def want_platform(self, image_id: str | None) -> bool:
+        """True (and marks it in flight) if `image_id`'s platform should be
         fetched now: not cached and not already being fetched."""
-        if image_id is None or image_id in self.image_architectures:
+        if image_id is None or image_id in self.image_platforms:
             return False
-        if image_id == self._architecture_in_flight:
+        if image_id == self._platform_in_flight:
             return False
-        self._architecture_in_flight = image_id
+        self._platform_in_flight = image_id
         return True
 
-    def store_architecture(self, image_id: str, architecture: str | None) -> None:
-        self.image_architectures[image_id] = architecture or "unknown"
-        if self._architecture_in_flight == image_id:
-            self._architecture_in_flight = None
+    def store_platform(self, image_id: str, platform: ImagePlatform | None) -> None:
+        """Cache a fetched platform; a failed fetch (`None`) is cached as
+        `unknown` so it isn't retried on every highlight."""
+        self.image_platforms[image_id] = platform or ImagePlatform("unknown", "unknown")
+        if self._platform_in_flight == image_id:
+            self._platform_in_flight = None
 
-    def architecture(self, image_id: str) -> str:
-        """Cached architecture, or "…" while it's still unknown."""
-        return self.image_architectures.get(image_id, "…")
+    def platform(self, image_id: str) -> ImagePlatform | None:
+        """Cached platform, or None while it's still unknown."""
+        return self.image_platforms.get(image_id)
 
     # --- Container detail ----------------------------------------------------
 

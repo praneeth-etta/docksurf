@@ -8,7 +8,7 @@ from textual import work
 from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.docker import format_size
-from docksurf_py.core.models import CommandResult, Image, ImageLayer
+from docksurf_py.core.models import CommandResult, Image, ImageLayer, ImagePlatform
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
@@ -72,11 +72,11 @@ class ImageActionHandler(_Base):
         item = self._get_focused_resource(TabID.IMAGES)
         return item if isinstance(item, Image) else None
 
-    def _sync_image_architecture(self) -> None:
-        """Lazily fetch and cache the focused image's Architecture.
+    def _sync_image_platform(self) -> None:
+        """Lazily fetch and cache the focused image's Architecture and Os.
 
         `get_images()` (`docker/fetcher.py`) no longer inspects every image
-        eagerly. Architecture is detail-pane only, so it's fetched once per
+        eagerly. They are detail-card only, so it's fetched once per
         image id here instead. Idempotent like
         `LiveStatsController._sync_stats`: no-ops once cached, and dedupes
         against a fetch already in flight for the same image.
@@ -84,20 +84,20 @@ class ImageActionHandler(_Base):
         image = self._get_focused_image()
         target = image.id if image is not None else None
 
-        if not self._details.want_architecture(target):
+        if not self._details.want_platform(target):
             return
         assert target is not None
-        self._fetch_image_architecture(target)
+        self._fetch_image_platform(target)
 
     @work(thread=True)
-    def _fetch_image_architecture(self, image_id: str) -> None:
-        architecture = self.docker.image_architecture(image_id)
-        self.call_from_thread(self._apply_image_architecture, image_id, architecture)
+    def _fetch_image_platform(self, image_id: str) -> None:
+        platform = self.docker.image_platform(image_id)
+        self.call_from_thread(self._apply_image_platform, image_id, platform)
 
-    def _apply_image_architecture(
-        self, image_id: str, architecture: str | None
+    def _apply_image_platform(
+        self, image_id: str, platform: ImagePlatform | None
     ) -> None:
-        self._details.store_architecture(image_id, architecture)
+        self._details.store_platform(image_id, platform)
         if not self._on_images_tab():
             return
         entry = self._resource_registry[TabID.IMAGES]

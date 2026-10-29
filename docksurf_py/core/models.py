@@ -115,7 +115,7 @@ class Container:
 @dataclass(slots=True, frozen=True)
 class ContainerDetail:
     """Detail-pane-only container fields not present in the `/containers/json`, fetched
-    by `DockerClient.container_detail`. Unlike `image_architecture`, these
+    by `DockerClient.container_detail`. Unlike `image_platform`, these
     fields are refreshed while a container remains selected because they can
     change over time.
     """
@@ -139,6 +139,15 @@ class Image:
     is_dangling: bool
     used_by: list[str]
     created: str
+
+
+@dataclass(slots=True, frozen=True)
+class ImagePlatform:
+    """An image's `Architecture` and `Os`, read from an inspect (the image list
+    summary carries neither); `"unknown"` for a field the daemon didn't report."""
+
+    architecture: str
+    os: str
 
 
 @dataclass(slots=True, frozen=True)

@@ -23,6 +23,7 @@ from docksurf_py.core.models import (
     ContextInfo,
     DockerSnapshot,
     ImageLayer,
+    ImagePlatform,
     SystemDf,
 )
 from docksurf_py.core.types import LogOptions
@@ -66,7 +67,7 @@ class DockerService(Protocol):
 
     def image_history(self, image_id: str) -> list[ImageLayer] | None: ...
 
-    def image_architecture(self, image_id: str) -> str | None: ...
+    def image_platform(self, image_id: str) -> ImagePlatform | None: ...
 
     def container_detail(self, container_id: str) -> ContainerDetail | None: ...
 

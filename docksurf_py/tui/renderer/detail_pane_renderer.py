@@ -5,17 +5,15 @@ from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.docker import (
     format_labels,
-    format_relative_time,
     format_size,
 )
 from docksurf_py.core.models import ComposeProject
-from docksurf_py.core.render.cards import container_card, project_card
+from docksurf_py.core.render.cards import container_card, image_card, project_card
+from docksurf_py.core.render.images import containers_using_image, image_tags
 from docksurf_py.core.render.topology import network_topology
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
-    markup_green,
-    markup_red,
     markup_yellow,
 )
 from docksurf_py.tui.ids import DETAIL_PANE_ID
@@ -80,33 +78,17 @@ class DetailPaneRenderer(_Base):
         if row >= len(images):
             return
         image = images[row]
-
-        if image.used_by:
-            status = markup_green("In Use")
-        elif image.is_dangling:
-            status = markup_red("Dangling (safe to delete)")
-        else:
-            status = markup_yellow("Unused (not referenced by any container)")
-
-        # Fetched lazily on row-select and cached by
-        # ImageActionHandler._sync_image_architecture; "…" until it resolves.
-        architecture = self._details.architecture(image.id)
-
-        identity = {
-            "ID": _dim(image.id.removeprefix("sha256:")[:12] if image.id else "N/A"),
-            "Architecture": architecture,
-        }
-        info = {
-            "Size": format_size(image.size_bytes),
-            "Created": format_relative_time(image.created),
-        }
-        usage = {
-            "Status": status,
-            "Used By": "\n".join(image.used_by) if image.used_by else "None",
-        }
-        pane.update_details(
-            f"Image: {image.repository}:{image.tag}",
-            {"Identity": identity, "Details": info, "Usage": usage},
+        snapshot = self.snapshot
+        # Architecture/Os are fetched lazily on row-select and cached by
+        # ImageActionHandler._sync_image_platform; pending until it resolves.
+        pane.update_card(
+            image_card(
+                image,
+                self._details.platform(image.id),
+                image_tags(image, snapshot.images if snapshot else images),
+                containers_using_image(image, snapshot.containers if snapshot else []),
+                self._view.palette,
+            )
         )
         pane.clear_topology()
 

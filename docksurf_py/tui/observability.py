@@ -79,7 +79,7 @@ class LiveStatsController(_Base):
             return
         self._sync_stats()
         self._sync_top()
-        self._sync_image_architecture()
+        self._sync_image_platform()
         self._sync_container_detail()
         self._sync_side_logs()
 

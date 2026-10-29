@@ -32,6 +32,7 @@ from docksurf_py.core.models import (
     DockerSnapshot,
     Image,
     ImageLayer,
+    ImagePlatform,
     Network,
     NetworkEndpoint,
     PortBinding,
@@ -220,9 +221,9 @@ class MockDockerService:
                 created_by="/bin/sh -c apk add curl", size_bytes=1024, created="0"
             ),
         ]
-        # Per-image Architecture returned by image_architecture(); tests can
-        # override. Keyed by image id, default "amd64" for anything unlisted.
-        self.architecture_map: dict[str, str] = {}
+        # Per-image platform returned by image_platform(); tests can override.
+        # Keyed by image id, default linux/amd64 for anything unlisted.
+        self.platform_map: dict[str, ImagePlatform] = {}
         # Per-container detail-pane-only fields returned by container_detail();
         # tests can override. Keyed by container id, default an "empty" detail
         # (no env, no health log, no start time, no restarts) for anything
@@ -290,9 +291,9 @@ class MockDockerService:
         self.calls.append(("image_history", image_id))
         return self.history_layers
 
-    def image_architecture(self, image_id: str) -> str | None:
-        self.calls.append(("image_architecture", image_id))
-        return self.architecture_map.get(image_id, "amd64")
+    def image_platform(self, image_id: str) -> ImagePlatform | None:
+        self.calls.append(("image_platform", image_id))
+        return self.platform_map.get(image_id, ImagePlatform("amd64", "linux"))
 
     def container_detail(self, container_id: str) -> ContainerDetail | None:
         self.calls.append(("container_detail", container_id))

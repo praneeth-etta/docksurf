@@ -6,6 +6,7 @@ into DockSurfApp; the text itself comes from `core.render.chrome`.
 
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual.widgets import TabbedContent
 
 from docksurf_py.core.models import ComposeProject, Container, Image, Network, Volume
@@ -21,6 +22,7 @@ from docksurf_py.core.render.chrome import (
     tab_summaries,
     top_bar,
 )
+from docksurf_py.core.render.images import images_footer
 from docksurf_py.core.render.observability import images_disk_line
 from docksurf_py.core.state.status import RunState, classify
 from docksurf_py.core.state.view import LayoutMode
@@ -138,6 +140,24 @@ class ChromeController(_Base):
         search_bar.placeholder = FILTER_PLACEHOLDERS[active]
         self._repaint_chip_bar(active, search_bar.value)
         self._repaint_toolbar_line()
+        self._repaint_footer()
+
+    def _repaint_footer(self) -> None:
+        """The list panel's bottom line (marked summary, notes), if the active
+        tab has one."""
+        if not self.is_running:
+            return
+        active = TabID(self.query_one(TabbedContent).active)
+        build = self._resource_registry[active].footer
+        panel = self.query_one(f"#{LIST_PANEL_ID}")
+        if build is None:
+            panel.border_subtitle = ""
+            return
+        marked = self._marked_items(active)
+        panel.border_subtitle = Text.from_markup(build(marked))
+
+    def _images_footer(self, marked: list[Image]) -> SafeMarkup:
+        return images_footer(marked, self._view.palette)
 
     def _repaint_toolbar_line(self) -> None:
         """The active tab's summary line above the filter, hidden if it has none."""

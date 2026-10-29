@@ -1,12 +1,13 @@
 """Image table cells: pure builders for the Images tab (Tide)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from rich.markup import escape
 
 from docksurf_py.core.docker.format import _parse_docker_ts, format_size
-from docksurf_py.core.models import Image
+from docksurf_py.core.models import Container, Image
 from docksurf_py.core.render.markup import truncate
 from docksurf_py.core.render.palette import Palette, fg, pill
 from docksurf_py.core.types import SafeMarkup
@@ -134,6 +135,31 @@ def repository_cell(repo: str, p: Palette, max_width: int) -> SafeMarkup:
     return SafeMarkup(out + f"[{p.strong}]{escape(name)}[/]")
 
 
+def containers_using_image(
+    image: Image, containers: Sequence[Container]
+) -> list[Container]:
+    """The containers running from `image`: matched by image id, or by name
+    through the snapshot's `used_by` correlation."""
+    return [c for c in containers if c.image_id == image.id or c.name in image.used_by]
+
+
+def image_tags(image: Image, images: Sequence[Image]) -> list[str]:
+    """Every tag of `image`'s id, in list order: `latest` when it shares the
+    image's repository, `repo:tag` otherwise. Untagged (`<none>`) is skipped."""
+    tags: list[str] = []
+    for other in images:
+        if other.id != image.id or other.is_dangling:
+            continue
+        label = (
+            other.tag
+            if other.repository == image.repository
+            else f"{other.repository}:{other.tag}"
+        )
+        if label not in tags:
+            tags.append(label)
+    return tags
+
+
 def image_status(image: Image) -> str:
     """`in use`, `dangling` or `unused` (a dangling image a container still
     uses counts as in use, matching the chips)."""
@@ -150,15 +176,23 @@ def status_rank(image: Image) -> int:
     return _STATUS_ORDER[image_status(image)]
 
 
+_STATUS_STYLE = {
+    "in use": ("●", "success"),
+    "unused": ("○", "muted"),
+    "dangling": ("✕", "warning"),
+}
+
+
+def status_glyph(image: Image, p: Palette) -> SafeMarkup:
+    """`●` (in use), `○` (unused) or `✕` (dangling), in the status colour."""
+    glyph, role = _STATUS_STYLE[image_status(image)]
+    return fg(p, role, glyph)
+
+
 def status_cell(image: Image, p: Palette) -> SafeMarkup:
     """`● in use` (success), `○ unused` (muted), `✕ dangling` (warning)."""
-    status = image_status(image)
-    glyph, role = {
-        "in use": ("●", "success"),
-        "unused": ("○", "muted"),
-        "dangling": ("✕", "warning"),
-    }[status]
-    return fg(p, role, f"{glyph} {status}")
+    glyph, role = _STATUS_STYLE[image_status(image)]
+    return fg(p, role, f"{glyph} {image_status(image)}")
 
 
 def compact_relative(created: str, now: datetime | None = None) -> str:
@@ -197,3 +231,36 @@ def image_row_cells(
         fg(p, "muted", compact_relative(image.created, now)),
         status_cell(image, p),
     )
+
+
+def marked_size(items: Sequence[Image]) -> int:
+    """Total size of the marked images, counting each image id once: several
+    tag rows of one image share its layers."""
+    return sum({i.id: i.size_bytes for i in items}.values())
+
+
+def marked_summary(items: Sequence[Image], p: Palette) -> SafeMarkup:
+    """`✓ 3 marked · 7.17GB`: the number of marked rows and the disk they
+    would free (see `marked_size`)."""
+    return SafeMarkup(
+        f"[bold {p.primary}]✓ {len(items)} marked[/]"
+        + fg(p, "muted", f" · {format_size(marked_size(items))}")
+    )
+
+
+def images_footer(marked: Sequence[Image], p: Palette) -> SafeMarkup:
+    """The Images panel's bottom line: the marked summary with its actions,
+    or a note about the shortened registry names when nothing is marked."""
+    if not marked:
+        return fg(p, "muted", "registry prefixes shortened · full name in detail")
+    keys = SafeMarkup(
+        "   ".join(
+            fg(p, "strong", key) + fg(p, "muted", f" {action}")
+            for key, action in (
+                ("d", "delete marked"),
+                ("a", "mark dangling"),
+                ("esc", "clear"),
+            )
+        )
+    )
+    return SafeMarkup(f"{marked_summary(marked, p)}{fg(p, 'muted', ' · ')}{keys}")

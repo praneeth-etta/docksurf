@@ -14,6 +14,7 @@ from rich.text import Text
 from docksurf_py.core.docker import (
     format_env,
     format_relative_time,
+    format_size,
     format_uptime,
     secret_env_count,
 )
@@ -22,8 +23,11 @@ from docksurf_py.core.models import (
     Container,
     ContainerDetail,
     ContainerTop,
+    Image,
+    ImagePlatform,
 )
 from docksurf_py.core.render.containers import compact_age
+from docksurf_py.core.render.images import image_status, status_glyph
 from docksurf_py.core.render.markup import format_health_log, state_cell, state_glyph
 from docksurf_py.core.render.observability import render_top
 from docksurf_py.core.render.palette import Palette, fg, key_chip, pill
@@ -322,5 +326,74 @@ def project_card(project: ComposeProject, p: Palette) -> CardModel:
             Text(""),
             section_rule("ACTIONS", p),
             Text.from_markup(hints),
+        ),
+    )
+
+
+# --- Image card ------------------------------------------------------------------
+
+_IMAGE_PILL_ROLE = {"in use": "success", "unused": "muted", "dangling": "warning"}
+
+
+def _image_used_by_rows(containers: Sequence[Container], p: Palette) -> list[Text]:
+    rows: list[Text] = []
+    for index, c in enumerate(containers):
+        where = (
+            f"{escape(c.compose_project)} {fg(p, 'faint', '›')} "
+            f"{escape(c.compose_service or c.name)}"
+            f" {fg(p, 'faint', '·')} "
+            if c.is_compose
+            else ""
+        )
+        line = f"{state_glyph(c, p)} {escape(c.name)}  {where}{fg(p, 'muted', c.state)}"
+        if index == 0:
+            line += f"   {fg(p, 'muted', '⏎ jump')}"
+        rows.append(Text.from_markup(line))
+    return rows
+
+
+def image_card(
+    image: Image,
+    platform: ImagePlatform | None,
+    tags: Sequence[str],
+    containers: Sequence[Container],
+    p: Palette,
+) -> CardModel:
+    """The image detail card. `platform` is None until the lazy inspect lands;
+    `tags` are every tag of this image id (see `image_tags`); `containers` are
+    the ones running from it (see `containers_using_image`)."""
+    status = image_status(image)
+    chips = [
+        pill(p, status.upper(), _IMAGE_PILL_ROLE[status]),
+        key_chip(p, platform.architecture if platform else "…"),
+        key_chip(p, platform.os if platform else "…"),
+    ]
+    facts = [
+        fg(p, "muted", format_size(image.size_bytes)),
+        fg(p, "muted", f"created {format_relative_time(image.created)}"),
+    ]
+    sha = image.id.removeprefix("sha256:")[:12]
+    tag_text = ", ".join(escape(t) for t in tags) or fg(p, "faint", "none")
+    rows = [
+        ("id", f"sha256:{escape(sha)}   {fg(p, 'muted', 'i inspect')}"),
+        ("tags", f"{tag_text}   {fg(p, 'muted', 'y tag')}"),
+    ]
+    used_by: list[RenderableType] = (
+        list(_image_used_by_rows(containers, p))
+        if containers
+        else [Text.from_markup(fg(p, "faint", "none"))]
+    )
+    name = f"{image.repository}:{image.tag}"
+    return CardModel(
+        key=f"image:{image.id}|{name}",
+        title=SafeMarkup(f"{status_glyph(image, p)} {escape(name)} · image"),
+        subtitle="",
+        body=Group(
+            _facts_line(p, " ".join(chips), facts),
+            Text(""),
+            _kv(p, rows),
+            Text(""),
+            section_rule("USED BY", p),
+            *used_by,
         ),
     )
