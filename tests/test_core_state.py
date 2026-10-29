@@ -581,3 +581,54 @@ class DefaultSortTests(unittest.TestCase):
     def test_first_click_on_the_default_column_flips_to_ascending(self) -> None:
         state = self._state()
         self.assertEqual(state.cycle_sort(TabID.IMAGES, "Size"), ("Size", False))
+
+
+class RevealTests(unittest.TestCase):
+    def test_expands_a_collapsed_project_and_flags_the_tab_dirty(self) -> None:
+        state, snap = _chip_state()
+        state.toggle_collapse("shop")
+        web = snap.containers[0]
+        result = state.reveal(TabID.CONTAINERS, web)
+        self.assertTrue(result.expanded)
+        self.assertFalse(state.is_collapsed("shop"))
+        self.assertIn(TabID.CONTAINERS, state.dirty)
+
+    def test_drops_a_chip_that_would_hide_the_row(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "stopped")
+        result = state.reveal(TabID.CONTAINERS, snap.containers[0])  # running web
+        self.assertTrue(result.cleared_chip)
+        self.assertEqual(state.active_chip[TabID.CONTAINERS], "all")
+
+    def test_keeps_a_chip_that_already_shows_the_row(self) -> None:
+        state, snap = _chip_state()
+        state.set_chip(TabID.CONTAINERS, "stopped")
+        result = state.reveal(TabID.CONTAINERS, snap.containers[1])  # stopped db
+        self.assertFalse(result.cleared_chip)
+        self.assertEqual(state.active_chip[TabID.CONTAINERS], "stopped")
+
+    def test_reports_but_does_not_clear_a_query_that_hides_the_row(self) -> None:
+        state, snap = _chip_state()
+        web = snap.containers[0]
+        self.assertTrue(state.reveal(TabID.CONTAINERS, web, "zzz").query_hides)
+        self.assertFalse(state.reveal(TabID.CONTAINERS, web, "WEB").query_hides)
+
+    def test_nothing_to_do_leaves_the_tab_clean(self) -> None:
+        state, snap = _chip_state()
+        solo = snap.containers[3]
+        result = state.reveal(TabID.CONTAINERS, solo)
+        self.assertFalse(result.changed_rows)
+        self.assertNotIn(TabID.CONTAINERS, state.dirty)
+
+    def test_a_standalone_container_never_touches_collapsed_projects(self) -> None:
+        state, snap = _chip_state()
+        state.toggle_collapse("shop")
+        self.assertFalse(state.reveal(TabID.CONTAINERS, snap.containers[3]).expanded)
+        self.assertTrue(state.is_collapsed("shop"))
+
+    def test_pending_focus_is_taken_once(self) -> None:
+        state, _ = _chip_state()
+        self.assertIsNone(state.take_pending_focus())
+        state.request_focus(("container", "web"))
+        self.assertEqual(state.take_pending_focus(), ("container", "web"))
+        self.assertIsNone(state.take_pending_focus())

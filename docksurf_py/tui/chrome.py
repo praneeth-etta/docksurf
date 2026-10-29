@@ -24,6 +24,7 @@ from docksurf_py.core.render.chrome import (
 )
 from docksurf_py.core.render.images import images_footer
 from docksurf_py.core.render.observability import images_disk_line
+from docksurf_py.core.state.navigation import related_containers
 from docksurf_py.core.state.status import RunState, classify
 from docksurf_py.core.state.view import LayoutMode
 from docksurf_py.core.types import SafeMarkup, TabID
@@ -210,4 +211,6 @@ class ChromeController(_Base):
             has_marks=self._tables.has_marks(active),
             compose=compose,
             filtering=self.query_one(f"#{SEARCH_BAR_ID}", SearchBar).has_focus,
+            related=isinstance(item, (Image, Volume, Network))
+            and bool(related_containers(item, self.snapshot)),
         )

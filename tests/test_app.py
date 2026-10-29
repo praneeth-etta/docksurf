@@ -41,8 +41,8 @@ from docksurf_py.core.models import (
 )
 from docksurf_py.core.render.palette import ANSI_PALETTE
 from docksurf_py.core.render.topology import (
-    _network_members,
     _network_summary,
+    network_members,
     network_topology,
 )
 from docksurf_py.core.session import SessionState
@@ -2253,7 +2253,7 @@ class NetworkActionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NetworkTopologyHelperTests(unittest.TestCase):
-    """`_network_members` / `_topology_tree` / `_network_summary` / yank."""
+    """`network_members` / `_topology_tree` / `_network_summary` / yank."""
 
     def _net_and_containers(self) -> tuple[Network, list[Container]]:
         web = make_container("web")
@@ -2268,7 +2268,7 @@ class NetworkTopologyHelperTests(unittest.TestCase):
 
     def test_members_union_endpoints_and_stopped_containers(self) -> None:
         net, containers = self._net_and_containers()
-        db, web = _network_members(net, containers)
+        db, web = network_members(net, containers)
         self.assertEqual((db.name, web.name), ("db", "web"))
         self.assertFalse(db.running)
         self.assertEqual(db.ipv4, "")  # stopped: no endpoint, hence no IP
@@ -2281,7 +2281,7 @@ class NetworkTopologyHelperTests(unittest.TestCase):
         net = _network(
             endpoints=[NetworkEndpoint(container_name="ghost", ipv4="172.18.0.9")]
         )
-        (member,) = _network_members(net, [])
+        (member,) = network_members(net, [])
         self.assertTrue(member.running)
         self.assertEqual(member.ipv4, "172.18.0.9")
 

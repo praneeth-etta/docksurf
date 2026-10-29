@@ -178,7 +178,44 @@ class KeyHintsTests(unittest.TestCase):
         self.assertIn("v", self.keys(tab=TabID.NETWORKS, row="network"))
 
     def test_empty_tab_still_offers_create(self) -> None:
-        self.assertEqual(self.keys(tab=TabID.IMAGES, row="none"), ["+"])
+        self.assertEqual(self.keys(tab=TabID.IMAGES, row="none"), ["+", "P"])
+        self.assertEqual(self.keys(tab=TabID.VOLUMES, row="none"), ["+", "b"])
+
+    def test_image_row_hints_follow_the_design(self) -> None:
+        self.assertEqual(
+            key_hints(HintContext(TabID.IMAGES, "image")),
+            [
+                ("h", "history"),
+                ("y", "tag"),
+                ("+", "pull"),
+                ("a", "mark dangling"),
+                ("d", "delete"),
+                ("P", "prune"),
+            ],
+        )
+
+    def test_jump_hint_only_when_there_is_something_to_jump_to(self) -> None:
+        for tab, row in (
+            (TabID.IMAGES, "image"),
+            (TabID.VOLUMES, "volume"),
+            (TabID.NETWORKS, "network"),
+        ):
+            with self.subTest(tab=tab):
+                self.assertNotIn("⏎", self.keys(tab=tab, row=row))
+                keys = self.keys(tab=tab, row=row, related=True)
+                self.assertEqual(keys[0], "⏎")  # most discoverable: first
+
+    def test_jump_hint_is_not_shown_on_the_containers_tab_or_without_a_row(
+        self,
+    ) -> None:
+        self.assertNotIn(
+            "⏎", self.keys(tab=TabID.CONTAINERS, row="container_running", related=True)
+        )
+        self.assertNotIn("⏎", self.keys(tab=TabID.IMAGES, row="none", related=True))
+
+    def test_marks_still_come_before_the_jump_hint(self) -> None:
+        keys = self.keys(tab=TabID.IMAGES, row="image", has_marks=True, related=True)
+        self.assertEqual(keys[:2], ["esc", "⏎"])
 
     def test_marks_prepend_clear_hint(self) -> None:
         keys = self.keys(tab=TabID.IMAGES, row="image", has_marks=True)

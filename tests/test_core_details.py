@@ -8,6 +8,7 @@ from docksurf_py.core.models import (
     ContainerDetail,
     ContainerTop,
     DiskUsageEntry,
+    ImageLayer,
     ImagePlatform,
     SystemDf,
 )
@@ -75,6 +76,42 @@ class SystemDfCacheTests(unittest.TestCase):
         cache.store_system_df(_df(), 100.0)
         self.assertFalse(cache.store_system_df(_df(), 200.0))
         self.assertEqual(cache.system_df_at, 200.0)
+
+
+class ImageLayersCacheTests(unittest.TestCase):
+    layers = [ImageLayer("CMD", 0, "0"), ImageLayer("RUN x", 5, "0")]
+
+    def test_fetched_once_and_deduped_in_flight(self) -> None:
+        cache = DetailCache()
+        self.assertIsNone(cache.layers("img"))
+        self.assertTrue(cache.want_layers("img"))
+        self.assertFalse(cache.want_layers("img"))  # in flight
+        self.assertTrue(cache.want_layers("other"))  # a different image is fine
+        cache.store_layers("img", self.layers)
+        self.assertEqual(cache.layers("img"), self.layers)
+        self.assertFalse(cache.want_layers("img"))  # cached for good
+        self.assertFalse(cache.want_layers(None))
+
+    def test_a_failed_fetch_is_remembered_and_not_retried(self) -> None:
+        cache = DetailCache()
+        cache.want_layers("img")
+        cache.store_layers("img", None)
+        self.assertIsNone(cache.layers("img"))
+        self.assertIn("img", cache.layers_unavailable)
+        self.assertFalse(cache.want_layers("img"))
+
+    def test_a_later_success_clears_the_unavailable_mark(self) -> None:
+        cache = DetailCache()
+        cache.store_layers("img", None)
+        cache.store_layers("img", self.layers)
+        self.assertNotIn("img", cache.layers_unavailable)
+
+    def test_an_empty_history_is_a_cached_result(self) -> None:
+        cache = DetailCache()
+        cache.want_layers("img")
+        cache.store_layers("img", [])
+        self.assertEqual(cache.layers("img"), [])
+        self.assertFalse(cache.want_layers("img"))
 
 
 class DetailCacheTests(unittest.TestCase):

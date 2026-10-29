@@ -199,7 +199,11 @@ class HintKeysAreBoundTests(unittest.TestCase):
     # Display name in a hint -> the key Textual's bindings use.
     _ALIASES = {"esc": "escape", "^u": "ctrl+u", "^k": "ctrl+k", "+": "plus"}
     # Handled by widgets rather than app bindings.
-    _WIDGET_KEYS = {"enter", "^p"}  # Input submit; Textual's command palette
+    _WIDGET_KEYS = {
+        "enter",  # Input submit
+        "⏎",  # DataTable select -> RowSelected (see test_jump_key_is_bound)
+        "^p",  # Textual's command palette
+    }
 
     def test_every_hinted_key_is_bound(self) -> None:
         bound: set[str] = set()
@@ -213,10 +217,16 @@ class HintKeysAreBoundTests(unittest.TestCase):
             "volume_group network network_group"
         ).split()
         seen: set[str] = set()
-        for tab, row, logs, marks, compose, filtering in itertools.product(
-            TabID, rows, (False, True), (False, True), (False, True), (False, True)
+        for tab, row, logs, marks, compose, filtering, related in itertools.product(
+            TabID,
+            rows,
+            (False, True),
+            (False, True),
+            (False, True),
+            (False, True),
+            (False, True),
         ):
-            ctx = HintContext(tab, row, logs, marks, compose, filtering)  # type: ignore[arg-type]
+            ctx = HintContext(tab, row, logs, marks, compose, filtering, related)  # type: ignore[arg-type]
             seen.update(k for k, _ in key_hints(ctx))
         seen.update(k for k, _ in GLOBAL_HINTS)
 
@@ -227,6 +237,14 @@ class HintKeysAreBoundTests(unittest.TestCase):
         }
         self.assertEqual(missing, set(), "hints name keys that aren't bound")
         self.assertGreater(len(seen), 15)  # the walk really covered the hints
+
+
+class JumpKeyTests(unittest.TestCase):
+    def test_jump_key_is_bound(self) -> None:
+        # `⏎ jump` is `enter`: DataTable's select binding, which posts the
+        # `RowSelected` that `DockSurfApp` turns into the jump.
+        keys = {b.key for b in DataTable.BINDINGS}  # type: ignore[union-attr]
+        self.assertIn("enter", keys)
 
 
 class InlineFilterTests(unittest.IsolatedAsyncioTestCase):

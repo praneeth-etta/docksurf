@@ -3,7 +3,7 @@
 Sits beside `renderer/` and `actions/` rather than inside either, because both
 consume it: `renderer/detail_pane_renderer.py` draws the diagrams into the
 detail pane, and `actions/clipboard.py` yanks the plaintext summary — and all
-of it derives from the same endpoint↔container join (`_network_members`).
+of it derives from the same endpoint↔container join (`network_members`).
 Imports stay at the `docker/`-and-below layer (`models`, `constants`,
 `docker.format_ports`), so either package can import this one freely.
 
@@ -45,7 +45,7 @@ class _Member:
     other_networks: list[str] = field(default_factory=list)
 
 
-def _network_members(network: Network, containers: list[Container]) -> list[_Member]:
+def network_members(network: Network, containers: list[Container]) -> list[_Member]:
     """Every container attached to `network`, running or not, sorted by name."""
     by_name = {c.name: c for c in containers}
     ips = {ep.container_name: ep.ipv4 for ep in network.endpoints}
@@ -80,7 +80,7 @@ def _network_summary(network: Network, containers: list[Container]) -> str:
         )
         if p
     )
-    members = _network_members(network, containers)
+    members = network_members(network, containers)
     if not members:
         return f"{header}\n  (no containers attached)"
     name_w = max(len(m.name) for m in members)
@@ -482,4 +482,4 @@ def network_topology(network: Network, containers: list[Container]) -> _NetworkD
     meta = "  ".join(p for p in (network.driver, network.subnet) if p and p != "N/A")
     if meta:
         hub_body.append(Text(meta, style="dim"))
-    return _NetworkDiagram(hub_title, hub_body, _network_members(network, containers))
+    return _NetworkDiagram(hub_title, hub_body, network_members(network, containers))

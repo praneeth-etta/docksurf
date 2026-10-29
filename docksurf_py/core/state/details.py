@@ -15,6 +15,7 @@ from docksurf_py.core.models import (
     Container,
     ContainerDetail,
     ContainerTop,
+    ImageLayer,
     ImagePlatform,
     SystemDf,
 )
@@ -35,6 +36,12 @@ class DetailCache:
         # Container env/health/start/restart detail, keyed by container id.
         # Refetched on selection, but kept so the pane shows last-known values.
         self.container_details: dict[str, ContainerDetail] = {}
+        # Per-image layer history (`docker history`), keyed by image id. An
+        # image's layers never change, so a fetched history is kept for good;
+        # ids whose fetch failed are remembered so they aren't retried on every
+        # highlight.
+        self.image_layers: dict[str, list[ImageLayer]] = {}
+        self.layers_unavailable: set[str] = set()
         # Whether secret-looking env values are shown unmasked (`R`).
         self.reveal_secrets = False
         # Last `docker system df` result and the monotonic time it was stored.
@@ -44,6 +51,7 @@ class DetailCache:
         self._system_df_in_flight = False
         self._detail_in_flight: str | None = None
         self._platform_in_flight: str | None = None
+        self._layers_in_flight: str | None = None
 
     # --- Volume sizes --------------------------------------------------------
 
@@ -113,6 +121,37 @@ class DetailCache:
     def platform(self, image_id: str) -> ImagePlatform | None:
         """Cached platform, or None while it's still unknown."""
         return self.image_platforms.get(image_id)
+
+    # --- Image layers --------------------------------------------------------
+
+    def want_layers(self, image_id: str | None) -> bool:
+        """True (and marks it in flight) if `image_id`'s history should be
+        fetched now: not cached, not known to fail, and not already being
+        fetched."""
+        if (
+            image_id is None
+            or image_id in self.image_layers
+            or image_id in self.layers_unavailable
+            or image_id == self._layers_in_flight
+        ):
+            return False
+        self._layers_in_flight = image_id
+        return True
+
+    def store_layers(self, image_id: str, layers: list[ImageLayer] | None) -> None:
+        """Cache a fetched history; `None` (the fetch failed) marks the image
+        as unavailable."""
+        if layers is None:
+            self.layers_unavailable.add(image_id)
+        else:
+            self.image_layers[image_id] = layers
+            self.layers_unavailable.discard(image_id)
+        if self._layers_in_flight == image_id:
+            self._layers_in_flight = None
+
+    def layers(self, image_id: str) -> list[ImageLayer] | None:
+        """Cached history, or None while unknown (pending or unavailable)."""
+        return self.image_layers.get(image_id)
 
     # --- Container detail ----------------------------------------------------
 

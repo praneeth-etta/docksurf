@@ -36,6 +36,7 @@ from docksurf_py.core.types import LogOptions, TabID
 from docksurf_py.tui.actions.common import _Base
 from docksurf_py.tui.ids import (
     DETAIL_PANE_ID,
+    LAYERS_PANEL_ID,
     LIST_PANEL_ID,
     LIVE_PANEL_ID,
     LOG_PANE_ID,
@@ -497,6 +498,9 @@ class ContainerActionHandler(_Base):
             full or not self._view.side_hidden
         )
         self.query_one(f"#{DETAIL_PANE_ID}").display = not full
+        self.query_one(f"#{LAYERS_PANEL_ID}").display = (
+            self.query_one(TabbedContent).active == TabID.IMAGES
+        )
         # The live panel follows the stats target, except in full view.
         self.query_one(f"#{LIVE_PANEL_ID}").display = (
             not full and self._live.stats_target is not None

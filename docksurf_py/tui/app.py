@@ -74,12 +74,14 @@ from docksurf_py.tui.actions import (
     ContextActionHandler,
     ImageActionHandler,
     InspectHandler,
+    JumpHandler,
     NetworkActionHandler,
     PruneHandler,
     ResourceDeletionHandler,
     SelectionHandler,
     VolumeActionHandler,
 )
+from docksurf_py.tui.actions.jump import JUMP_TABS
 from docksurf_py.tui.chrome import ChromeController
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
@@ -88,6 +90,7 @@ from docksurf_py.tui.ids import (
     DETAIL_PANE_ID,
     EMPTY_STATE_IDS,
     FILTER_PLACEHOLDERS,
+    LAYERS_PANEL_ID,
     LIST_PANEL_ID,
     LIST_TOOLBAR_ID,
     LIVE_PANEL_ID,
@@ -121,6 +124,7 @@ from docksurf_py.tui.widgets import (
     DetailPane,
     HelpScreen,
     ImageTable,
+    LayersPanel,
     LivePanel,
     LogPane,
     NetworkTable,
@@ -248,10 +252,13 @@ class AppContext(Protocol):
     def _sync_stats(self) -> None: ...
     def _sync_top(self) -> None: ...
     def _sync_image_platform(self) -> None: ...
+    def _sync_image_layers(self) -> None: ...
+    def _paint_image_layers(self, image: Any) -> None: ...
     def _sync_system_df(self) -> None: ...
     def _apply_system_df(self, df: Any) -> None: ...
     def _repaint_toolbar_line(self) -> None: ...
     def _repaint_footer(self) -> None: ...
+    def _select_pending_focus(self) -> None: ...
     def _images_footer(self, marked: list) -> SafeMarkup: ...
     def _images_toolbar_line(self, width: int) -> SafeMarkup: ...
     def _sync_side_logs(self) -> None: ...
@@ -314,6 +321,7 @@ class DockSurfApp(
     ClipboardHandler,
     SelectionHandler,
     InspectHandler,
+    JumpHandler,
     PruneHandler,
     ContextActionHandler,
     ImageActionHandler,
@@ -555,6 +563,7 @@ class DockSurfApp(
             with Vertical(id=SIDE_COLUMN_ID):
                 yield DetailPane(id=DETAIL_PANE_ID, classes="panel")
                 yield LivePanel(id=LIVE_PANEL_ID, classes="panel")
+                yield LayersPanel(id=LAYERS_PANEL_ID, classes="panel")
                 yield LogPane(
                     id=LOG_PANE_ID,
                     classes="panel",
@@ -680,6 +689,20 @@ class DockSurfApp(
         self._schedule_side_retarget()
         self._repaint_bottom_bar()
 
+    @on(DataTable.RowSelected)
+    def _on_row_selected(self, event: DataTable.RowSelected) -> None:
+        """`enter` (or a second click) on a row: jump to the related container
+        on the tabs that have one. Handled here, not in a mixin, where `@on`
+        would be silently dead."""
+        if not self.is_running:
+            return
+        active = self.query_one(TabbedContent).active
+        entry = self._resource_registry.get(active)
+        if entry is None or event.control.id != entry.table_id:
+            return
+        if active in JUMP_TABS:
+            self.action_jump_related()
+
     @on(TabbedContent.TabActivated)
     def clear_on_tab_switch(self) -> None:
         if not self.is_running:
@@ -689,6 +712,10 @@ class DockSurfApp(
             self._populate_tab(active)
         self._sync_log_layout()
         self._auto_select_first()
+        if active == TabID.CONTAINERS:
+            self._select_pending_focus()  # a jump from Images/Volumes/Networks
+        else:
+            self._tables.take_pending_focus()  # a jump that didn't land: drop it
         self._repaint_chrome()
         if active in (TabID.IMAGES, TabID.VOLUMES):
             self._sync_system_df()

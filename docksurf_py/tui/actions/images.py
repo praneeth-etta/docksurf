@@ -9,13 +9,16 @@ from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.docker import format_size
 from docksurf_py.core.models import CommandResult, Image, ImageLayer, ImagePlatform
+from docksurf_py.core.render.images import layers_summary, layers_title
+from docksurf_py.core.render.palette import fg
 from docksurf_py.core.state.tables import row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
-from docksurf_py.tui.ids import DETAIL_PANE_ID
+from docksurf_py.tui.ids import DETAIL_PANE_ID, LAYERS_PANEL_ID
 from docksurf_py.tui.widgets import (
     DetailPane,
     LayerHistoryScreen,
+    LayersPanel,
     PromptField,
     PromptScreen,
     PullProgressScreen,
@@ -110,6 +113,53 @@ class ImageActionHandler(_Base):
             entry.show_details(pane, row)
         except IndexError:
             pass
+
+    def _sync_image_layers(self) -> None:
+        """Show the focused image's layers and fetch them if they aren't cached.
+
+        Called from the debounced side retarget, so holding `↓` over many
+        images fetches only the one the cursor settles on. A history never
+        changes for an image id, so it is fetched once.
+        """
+        if not self._on_images_tab():
+            return
+        image = self._get_focused_image()
+        self._paint_image_layers(image)
+        if image is not None and self._details.want_layers(image.id):
+            self._fetch_image_layers(image.id)
+
+    @work(thread=True)
+    def _fetch_image_layers(self, image_id: str) -> None:
+        layers = self.docker.image_history(image_id)
+        self.call_from_thread(self._apply_image_layers, image_id, layers)
+
+    def _apply_image_layers(
+        self, image_id: str, layers: list[ImageLayer] | None
+    ) -> None:
+        self._details.store_layers(image_id, layers)
+        if not self.is_running or not self._on_images_tab():
+            return
+        image = self._get_focused_image()
+        if image is not None and image.id == image_id:
+            self._paint_image_layers(image)
+
+    def _paint_image_layers(self, image: Image | None) -> None:
+        """Paint the layers panel from the cache (or a placeholder)."""
+        panel = self.query_one(f"#{LAYERS_PANEL_ID}", LayersPanel)
+        p = self._view.palette
+        if image is None:
+            panel.show_message("layers", fg(p, "muted", "select an image"))
+            return
+        layers = self._details.layers(image.id)
+        if layers is not None:
+            panel.show_layers(
+                layers_title(layers),
+                lambda width, height: layers_summary(layers, p, height, width),
+            )
+        elif image.id in self._details.layers_unavailable:
+            panel.show_message("layers", fg(p, "muted", "history unavailable"))
+        else:
+            panel.show_message("layers · …", fg(p, "muted", "loading layers…"))
 
     def _handle_write_result(self, result: CommandResult) -> None:
         """Shared success/failure handling for the simple create/tag/connect

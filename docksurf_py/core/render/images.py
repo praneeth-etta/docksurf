@@ -1,5 +1,6 @@
 """Image table cells: pure builders for the Images tab (Tide)."""
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -7,7 +8,7 @@ from datetime import datetime, timezone
 from rich.markup import escape
 
 from docksurf_py.core.docker.format import _parse_docker_ts, format_size
-from docksurf_py.core.models import Container, Image
+from docksurf_py.core.models import Image, ImageLayer
 from docksurf_py.core.render.markup import truncate
 from docksurf_py.core.render.palette import Palette, fg, pill
 from docksurf_py.core.types import SafeMarkup
@@ -135,14 +136,6 @@ def repository_cell(repo: str, p: Palette, max_width: int) -> SafeMarkup:
     return SafeMarkup(out + f"[{p.strong}]{escape(name)}[/]")
 
 
-def containers_using_image(
-    image: Image, containers: Sequence[Container]
-) -> list[Container]:
-    """The containers running from `image`: matched by image id, or by name
-    through the snapshot's `used_by` correlation."""
-    return [c for c in containers if c.image_id == image.id or c.name in image.used_by]
-
-
 def image_tags(image: Image, images: Sequence[Image]) -> list[str]:
     """Every tag of `image`'s id, in list order: `latest` when it shares the
     image's repository, `repo:tag` otherwise. Untagged (`<none>`) is skipped."""
@@ -264,3 +257,86 @@ def images_footer(marked: Sequence[Image], p: Palette) -> SafeMarkup:
         )
     )
     return SafeMarkup(f"{marked_summary(marked, p)}{fg(p, 'muted', ' · ')}{keys}")
+
+
+# --- Layers panel ------------------------------------------------------------
+
+LAYER_SIZE_WIDTH = 10
+
+_NOP_PREFIX = re.compile(r"^/bin/sh -c #\(nop\)\s*")
+# What the oldest layer of a base image typically looks like in `docker history`.
+_BASE_LAYER = re.compile(r"^(ADD|COPY)\s+(file|rootfs)\b|^# debian\.sh|^FROM\b")
+
+
+def clean_layer_command(created_by: str) -> str:
+    """A layer's build instruction as one tidy line: `/bin/sh -c #(nop) `
+    stripped (`CMD ["bash"]`), a shell command shown as `RUN ...`, a trailing
+    `# buildkit` dropped and whitespace collapsed."""
+    command = created_by.strip()
+    if _NOP_PREFIX.match(command):
+        command = _NOP_PREFIX.sub("", command)
+    elif command.startswith("/bin/sh -c "):
+        command = "RUN " + command.removeprefix("/bin/sh -c ")
+    command = re.sub(r"\s*#\s*buildkit\s*$", "", command)
+    return " ".join(command.split()) or "—"
+
+
+def layers_title(layers: Sequence[ImageLayer]) -> str:
+    """`layers · 14 · largest first`."""
+    return f"layers · {len(layers)} · largest first"
+
+
+def _base_layer(layers: Sequence[ImageLayer]) -> ImageLayer | None:
+    """Best-effort: the oldest layer that has content, if it looks like a base
+    image's root filesystem. `docker history` lists newest first."""
+    for layer in reversed(layers):
+        if layer.size_bytes > 0:
+            if _BASE_LAYER.match(clean_layer_command(layer.created_by)):
+                return layer
+            return None
+    return None
+
+
+def layers_summary(
+    layers: Sequence[ImageLayer], p: Palette, max_rows: int, width: int
+) -> SafeMarkup:
+    """The inline layers list: the biggest layers first, size right-aligned,
+    the build command ellipsized to `width`, then a line counting what was
+    left out. The base image's layer is muted and marked `(base)`.
+
+    Metadata-only layers (size 0) are never listed, only counted. At most
+    `max_rows` lines are returned, the last being the "left out" line when
+    there is one (with a single row, the largest layer alone).
+    """
+    real = sorted(
+        (layer for layer in layers if layer.size_bytes > 0),
+        key=lambda layer: -layer.size_bytes,
+    )
+    empty = len(layers) - len(real)
+    # Reserve a line for the summary when anything will be left out.
+    if max_rows <= 0:
+        return SafeMarkup("")
+    room = max_rows
+    # One row is better spent on the largest layer than on the summary.
+    if max_rows > 1 and (empty or len(real) > room):
+        room -= 1
+    shown, hidden = real[:room], max(len(real) - room, 0)
+    base = _base_layer(layers)
+    command_width = max(width - LAYER_SIZE_WIDTH - 2, 1)
+    lines: list[str] = []
+    for layer in shown:
+        is_base = layer is base
+        command = clean_layer_command(layer.created_by)
+        suffix = " (base)" if is_base else ""
+        text = truncate(command, max(command_width - len(suffix), 1)) + suffix
+        size = format_size(layer.size_bytes).rjust(LAYER_SIZE_WIDTH)
+        role = "muted" if is_base else "foreground"
+        lines.append(fg(p, role, f"{size}  {text}"))
+    left_out: list[str] = []
+    if hidden:
+        left_out.append(f"{hidden} more")
+    if empty:
+        left_out.append(f"{empty} empty metadata layer{'s' if empty != 1 else ''}")
+    if left_out and max_rows > 1:
+        lines.append(fg(p, "faint", "… " + " · ".join(left_out)))
+    return SafeMarkup("\n".join(lines))

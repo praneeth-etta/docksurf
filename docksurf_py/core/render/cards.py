@@ -361,7 +361,7 @@ def image_card(
 ) -> CardModel:
     """The image detail card. `platform` is None until the lazy inspect lands;
     `tags` are every tag of this image id (see `image_tags`); `containers` are
-    the ones running from it (see `containers_using_image`)."""
+    the ones running from it (see `related_containers`)."""
     status = image_status(image)
     chips = [
         pill(p, status.upper(), _IMAGE_PILL_ROLE[status]),

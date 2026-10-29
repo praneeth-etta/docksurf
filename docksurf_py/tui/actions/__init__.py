@@ -11,6 +11,7 @@ from docksurf_py.tui.actions.context import ContextActionHandler
 from docksurf_py.tui.actions.deletion import ResourceDeletionHandler
 from docksurf_py.tui.actions.images import ImageActionHandler
 from docksurf_py.tui.actions.inspect import InspectHandler
+from docksurf_py.tui.actions.jump import JumpHandler
 from docksurf_py.tui.actions.networks import NetworkActionHandler
 from docksurf_py.tui.actions.prune import PruneHandler
 from docksurf_py.tui.actions.selection import SelectionHandler
@@ -23,6 +24,7 @@ __all__ = [
     "ContextActionHandler",
     "ImageActionHandler",
     "InspectHandler",
+    "JumpHandler",
     "NetworkActionHandler",
     "PruneHandler",
     "ResourceDeletionHandler",

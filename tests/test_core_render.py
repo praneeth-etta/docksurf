@@ -11,17 +11,20 @@ from docksurf_py.core.models import (
     DiskUsageEntry,
     HealthProbe,
     Image,
+    ImageLayer,
     SystemDf,
 )
 from docksurf_py.core.render.images import (
     SIZE_WIDTH,
     RepoParts,
+    clean_layer_command,
     compact_relative,
-    containers_using_image,
     image_row_cells,
     image_status,
     image_tags,
     images_footer,
+    layers_summary,
+    layers_title,
     marked_size,
     marked_summary,
     repository_cell,
@@ -503,18 +506,125 @@ class ImageRelationTests(unittest.TestCase):
         dangling = self._img("sha256:d", "<none>", "<none>", dangling=True)
         self.assertEqual(image_tags(dangling, [dangling]), [])
 
-    def test_containers_match_by_image_id_or_used_by_name(self) -> None:
-        image = self._img("img", "app", "latest")
-        image.used_by.append("legacy")
-        by_id = make_container("by-id")  # make_container uses image_id "img"
-        by_name = make_container("legacy")
-        by_name.image_id = "other"
-        unrelated = make_container("unrelated")
-        unrelated.image_id = "other"
+
+class CleanLayerCommandTests(unittest.TestCase):
+    def test_nop_prefix_is_stripped(self) -> None:
         self.assertEqual(
-            [
-                c.name
-                for c in containers_using_image(image, [by_id, by_name, unrelated])
-            ],
-            ["by-id", "legacy"],
+            clean_layer_command('/bin/sh -c #(nop)  CMD ["bash"]'), 'CMD ["bash"]'
         )
+        self.assertEqual(
+            clean_layer_command("/bin/sh -c #(nop) ADD file:abc in /"),
+            "ADD file:abc in /",
+        )
+
+    def test_shell_commands_read_as_run(self) -> None:
+        self.assertEqual(
+            clean_layer_command("/bin/sh -c apk add   curl"), "RUN apk add curl"
+        )
+
+    def test_buildkit_marker_and_whitespace(self) -> None:
+        self.assertEqual(
+            clean_layer_command("RUN /bin/sh -c make \\\n  install # buildkit"),
+            "RUN /bin/sh -c make \\ install",
+        )
+
+    def test_empty_command(self) -> None:
+        self.assertEqual(clean_layer_command(""), "—")
+
+
+def _layer(command: str, size: int) -> ImageLayer:
+    return ImageLayer(command, size, "0")
+
+
+class LayersSummaryTests(unittest.TestCase):
+    p = TIDE_PALETTE
+    MB = 1024**2
+
+    def _lines(self, layers, rows=10, width=60) -> list[str]:
+        return Text.from_markup(
+            layers_summary(layers, self.p, rows, width)
+        ).plain.split("\n")
+
+    def test_title_counts_every_layer(self) -> None:
+        layers = [_layer("a", 1), _layer("b", 0), _layer("c", 0)]
+        self.assertEqual(layers_title(layers), "layers · 3 · largest first")
+
+    def test_largest_first_with_right_aligned_sizes(self) -> None:
+        layers = [
+            _layer("/bin/sh -c small", self.MB),
+            _layer("/bin/sh -c big", 90 * self.MB),
+        ]
+        lines = self._lines(layers)
+        self.assertEqual(lines[0], "   90.00MB  RUN big")
+        self.assertEqual(lines[1], "    1.00MB  RUN small")
+
+    def test_empty_layers_are_counted_not_listed(self) -> None:
+        layers = [
+            _layer('/bin/sh -c #(nop)  CMD ["x"]', 0),
+            _layer("/bin/sh -c work", self.MB),
+            _layer("/bin/sh -c #(nop)  ENV A=1", 0),
+        ]
+        lines = self._lines(layers)
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[1], "… 2 empty metadata layers")
+        self.assertEqual(
+            self._lines([_layer("a", self.MB), _layer("b", 0)])[-1],
+            "… 1 empty metadata layer",
+        )
+
+    def test_no_summary_line_when_nothing_is_left_out(self) -> None:
+        self.assertEqual(
+            len(self._lines([_layer("a", self.MB), _layer("b", 2 * self.MB)])), 2
+        )
+
+    def test_max_rows_caps_the_output_and_counts_the_rest(self) -> None:
+        layers = [_layer(f"/bin/sh -c step{i}", (i + 1) * self.MB) for i in range(6)]
+        lines = self._lines(layers, rows=4)
+        self.assertEqual(len(lines), 4)
+        self.assertIn("step5", lines[0])  # the largest
+        self.assertEqual(lines[-1], "… 3 more")
+
+    def test_more_and_empty_share_the_summary_line(self) -> None:
+        layers = [_layer(f"/bin/sh -c s{i}", (i + 1) * self.MB) for i in range(5)]
+        layers.append(_layer("CMD", 0))
+        self.assertEqual(
+            self._lines(layers, rows=3)[-1], "… 3 more · 1 empty metadata layer"
+        )
+
+    def test_one_row_shows_the_largest_layer_alone(self) -> None:
+        layers = [
+            _layer("/bin/sh -c a", self.MB),
+            _layer("/bin/sh -c b", 2 * self.MB),
+            _layer("CMD", 0),
+        ]
+        self.assertEqual(self._lines(layers, rows=1), ["    2.00MB  RUN b"])
+        self.assertEqual(layers_summary(layers, self.p, 0, 60), "")
+
+    def test_commands_are_ellipsized_to_the_width(self) -> None:
+        layers = [_layer("/bin/sh -c " + "x" * 100, self.MB)]
+        (line,) = self._lines(layers, width=40)
+        self.assertEqual(len(line), 40)
+        self.assertTrue(line.endswith("…"))
+
+    def test_the_base_layer_is_muted_and_marked(self) -> None:
+        layers = [
+            _layer('/bin/sh -c #(nop)  CMD ["bash"]', 0),
+            _layer("/bin/sh -c make", 5 * self.MB),
+            _layer("/bin/sh -c #(nop) ADD file:abc in /", 80 * self.MB),  # oldest
+        ]
+        markup = layers_summary(layers, self.p, 10, 60)
+        lines = Text.from_markup(markup).plain.split("\n")
+        self.assertTrue(lines[0].endswith("ADD file:abc in / (base)"))
+        self.assertNotIn("(base)", lines[1])
+        self.assertIn(f"[{self.p.muted}]", markup.split("\n")[0])
+
+    def test_no_base_marker_without_a_root_filesystem_layer(self) -> None:
+        layers = [
+            _layer("/bin/sh -c make", 5 * self.MB),
+            _layer("/bin/sh -c apk add x", self.MB),
+        ]
+        self.assertNotIn("(base)", "\n".join(self._lines(layers)))
+
+    def test_layer_commands_are_escaped(self) -> None:
+        (line,) = self._lines([_layer("/bin/sh -c echo [bold]x", self.MB)])
+        self.assertIn("RUN echo [bold]x", line)

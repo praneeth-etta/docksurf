@@ -9,8 +9,9 @@ from docksurf_py.core.docker import (
 )
 from docksurf_py.core.models import ComposeProject
 from docksurf_py.core.render.cards import container_card, image_card, project_card
-from docksurf_py.core.render.images import containers_using_image, image_tags
+from docksurf_py.core.render.images import image_tags
 from docksurf_py.core.render.topology import network_topology
+from docksurf_py.core.state.navigation import related_containers
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
@@ -86,11 +87,12 @@ class DetailPaneRenderer(_Base):
                 image,
                 self._details.platform(image.id),
                 image_tags(image, snapshot.images if snapshot else images),
-                containers_using_image(image, snapshot.containers if snapshot else []),
+                related_containers(image, snapshot),
                 self._view.palette,
             )
         )
         pane.clear_topology()
+        self._paint_image_layers(image)
 
     def _show_volume_details(self, pane: DetailPane, row: int) -> None:
         volumes = self._tables.rows.get(TabID.VOLUMES, [])

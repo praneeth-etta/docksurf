@@ -148,6 +148,22 @@ IMAGE_CHIPS: tuple[Chip, ...] = (
 
 
 @dataclass(frozen=True)
+class Reveal:
+    """What `TablesState.reveal` had to change to make a row visible.
+    `query_hides` is reported, not fixed: the filter text lives in the input
+    widget, so the caller clears it."""
+
+    expanded: bool = False
+    cleared_chip: bool = False
+    query_hides: bool = False
+
+    @property
+    def changed_rows(self) -> bool:
+        """The tab's rows must be rebuilt."""
+        return self.expanded or self.cleared_chip or self.query_hides
+
+
+@dataclass(frozen=True)
 class ResourceKind:
     """What core needs to know about one resource type to build its table rows.
 
@@ -203,6 +219,8 @@ class TablesState:
         self.collapsed_projects: set[str] = set()
         # Active status chip per tab (`ALL_CHIP` = no chip filter).
         self.active_chip: dict[TabID, str] = {tab: ALL_CHIP for tab in self.kinds}
+        # A row to select once its tab becomes active (a cross-tab jump).
+        self.pending_focus: RowKey | None = None
 
     # --- Snapshot lifecycle --------------------------------------------------
 
@@ -332,6 +350,38 @@ class TablesState:
                 rows.extend(project.containers)
         rows.extend(standalone)
         return rows
+
+    # --- Reveal / jump -------------------------------------------------------
+
+    def reveal(self, tab: TabID, item: Any, query: str = "") -> Reveal:
+        """Make `item`'s row visible on `tab`: expand its Compose project if
+        collapsed and drop a status chip that would hide it. A text `query`
+        that hides it is only reported (see `Reveal`). Flags the tab dirty when
+        its rows have to change."""
+        kind = self.kinds[tab]
+        expanded = False
+        project = getattr(item, "compose_project", "")
+        if kind.groups_by_project and project and project in self.collapsed_projects:
+            self.collapsed_projects.discard(project)
+            expanded = True
+        chip = self._active_chip(tab)
+        cleared_chip = chip is not None and not chip.matches(item)
+        if cleared_chip:
+            self.active_chip[tab] = ALL_CHIP
+        query_hides = bool(query) and not kind.matches(item, query.lower())
+        result = Reveal(expanded, cleared_chip, query_hides)
+        if result.changed_rows:
+            self.dirty.add(tab)
+        return result
+
+    def request_focus(self, key: RowKey | None) -> None:
+        """Select the row `key` as soon as its tab is shown."""
+        self.pending_focus = key
+
+    def take_pending_focus(self) -> RowKey | None:
+        """The row to select now, if a jump asked for one (and forget it)."""
+        key, self.pending_focus = self.pending_focus, None
+        return key
 
     # --- Sort ----------------------------------------------------------------
 

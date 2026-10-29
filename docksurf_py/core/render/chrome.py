@@ -151,6 +151,8 @@ class HintContext:
     has_marks: bool = False
     compose: bool = False  # the focused container belongs to a Compose project
     filtering: bool = False  # the filter input has focus and takes the keys
+    # The focused image/volume/network has a container to jump to (`enter`).
+    related: bool = False
 
 
 Hint = tuple[str, str]
@@ -160,6 +162,7 @@ GLOBAL_HINTS: tuple[Hint, ...] = (("/", "filter"), ("?", "all keys"), ("^p", "pa
 
 _MARK: Hint = ("space", "mark")
 _DELETE: Hint = ("d", "delete")
+_JUMP: Hint = ("⏎", "jump")
 
 
 def key_hints(ctx: HintContext) -> list[Hint]:
@@ -199,14 +202,28 @@ def key_hints(ctx: HintContext) -> list[Hint]:
                 ("space", "collapse"),
             ]
     elif ctx.tab == TabID.IMAGES:
-        hints += [("+", "pull")]
         if ctx.row == "image":
-            hints += [("h", "history"), ("y", "tag"), ("a", "dangling"), _MARK, _DELETE]
+            if ctx.related:
+                hints.append(_JUMP)
+            hints += [
+                ("h", "history"),
+                ("y", "tag"),
+                ("+", "pull"),
+                ("a", "mark dangling"),
+                _DELETE,
+                ("P", "prune"),
+            ]
+        else:
+            hints += [("+", "pull"), ("P", "prune")]
     elif ctx.tab == TabID.VOLUMES:
+        if ctx.row == "volume" and ctx.related:
+            hints.append(_JUMP)
         hints += [("+", "new"), ("b", "size all")]
         if ctx.row == "volume":
             hints += [_MARK, _DELETE]
     elif ctx.tab == TabID.NETWORKS:
+        if ctx.row == "network" and ctx.related:
+            hints.append(_JUMP)
         hints += [("+", "new")]
         if ctx.row == "network":
             hints += [("v", "connect"), ("m", "disconnect"), _MARK, _DELETE]

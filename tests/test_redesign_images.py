@@ -12,6 +12,7 @@ from docksurf_py.core.models import (
     DiskUsageEntry,
     DockerSnapshot,
     Image,
+    ImageLayer,
     ImagePlatform,
     SystemDf,
 )
@@ -20,11 +21,12 @@ from docksurf_py.tui.app import DockSurfApp
 from docksurf_py.tui.ids import (
     CHIP_BAR_ID,
     EMPTY_STATE_IDS,
+    LAYERS_PANEL_ID,
     LIST_PANEL_ID,
     TOOLBAR_LINE_ID,
     TableID,
 )
-from docksurf_py.tui.widgets import ChipBar, ToolbarLine
+from docksurf_py.tui.widgets import ChipBar, LayersPanel, ToolbarLine
 from tests.test_app import MockDockerService, _image, wait_until
 from tests.test_compose import make_container
 
@@ -317,3 +319,88 @@ class ImageCardTests(unittest.IsolatedAsyncioTestCase):
                 [c for c in svc.calls if c[0] == "image_platform"],
                 [("image_platform", "img")],  # one fetch for both tag rows
             )
+
+
+class LayersPanelTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _snapshot() -> DockerSnapshot:
+        return DockerSnapshot(
+            containers=[],
+            images=[
+                Image("sha256:big", "big", "1", 900, False, [], ""),
+                Image("sha256:small", "small", "1", 5, False, [], ""),
+            ],
+            volumes=[],
+            networks=[],
+        )
+
+    @staticmethod
+    def _text(app: DockSurfApp) -> str:
+        panel = app.query_one(f"#{LAYERS_PANEL_ID}", LayersPanel)
+        console = Console(width=80, no_color=True, highlight=False)
+        with console.capture() as cap:
+            console.print(panel.render())
+        return cap.get()
+
+    @staticmethod
+    def _title(app: DockSurfApp) -> str:
+        return str(app.query_one(f"#{LAYERS_PANEL_ID}", LayersPanel).border_title)
+
+    @staticmethod
+    def _history_calls(svc: MockDockerService) -> list:
+        return [c for c in svc.calls if c[0] == "image_history"]
+
+    async def test_panel_is_shown_on_the_images_tab_only(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(self._snapshot))
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await wait_until(lambda: app.snapshot is not None)
+            panel = app.query_one(f"#{LAYERS_PANEL_ID}", LayersPanel)
+            self.assertFalse(panel.display)
+            await pilot.press("2")
+            await wait_until(lambda: panel.display)
+            await pilot.press("3")
+            await wait_until(lambda: not panel.display)
+
+    async def test_layers_load_once_the_cursor_settles_and_are_cached(self) -> None:
+        svc = MockDockerService(self._snapshot)
+        svc.history_layers = [
+            ImageLayer("/bin/sh -c #(nop)  CMD x", 0, "0"),
+            ImageLayer("/bin/sh -c apk add curl", 4096, "0"),
+        ]
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await wait_until(lambda: app.snapshot is not None)
+            await pilot.press("2")
+            await wait_until(
+                lambda: self._title(app) == "layers · 2 · largest first", timeout=4.0
+            )
+            panel = app.query_one(f"#{LAYERS_PANEL_ID}", LayersPanel)
+            self.assertEqual(panel.border_subtitle, "h full history")
+            self.assertEqual(
+                self._history_calls(svc), [("image_history", "sha256:big")]
+            )
+            # Moving away and back reuses the cache: no second fetch for "big".
+            await pilot.press("down")
+            await wait_until(lambda: len(self._history_calls(svc)) == 2, timeout=4.0)
+            await pilot.press("up")
+            await pilot.pause(0.6)
+            self.assertEqual(
+                self._history_calls(svc),
+                [("image_history", "sha256:big"), ("image_history", "sha256:small")],
+            )
+
+    async def test_unavailable_history_says_so_and_is_not_retried(self) -> None:
+        svc = MockDockerService(self._snapshot)
+        svc.image_history = lambda image_id: (  # type: ignore[method-assign]
+            svc.calls.append(("image_history", image_id)) or None
+        )
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await wait_until(lambda: app.snapshot is not None)
+            await pilot.press("2")
+            await wait_until(lambda: "unavailable" in self._text(app), timeout=4.0)
+            await pilot.pause(0.6)
+            self.assertEqual(len(self._history_calls(svc)), 1)
