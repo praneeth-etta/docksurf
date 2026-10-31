@@ -111,7 +111,7 @@ class DiskLineTests(unittest.IsolatedAsyncioTestCase):
             await wait_until(lambda: not line.display)
             await pilot.press("2")
             await wait_until(lambda: line.display)
-            await pilot.press("3")
+            await pilot.press("4")  # Networks; Volumes has its own line
             await wait_until(lambda: not line.display)
 
     async def test_line_shows_the_df_figures_once_fetched(self) -> None:
@@ -274,7 +274,7 @@ class MarkedFooterTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=MockDockerService(_chip_snapshot))
         async with app.run_test(size=(160, 30)) as pilot:
             await self._open(app, pilot)
-            await pilot.press("3")
+            await pilot.press("4")  # Networks; Volumes has its own footer
             await wait_until(lambda: self._footer(app) == "")
 
 

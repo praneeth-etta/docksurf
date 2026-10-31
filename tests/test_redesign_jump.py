@@ -14,6 +14,7 @@ from docksurf_py.core.models import (
     NetworkEndpoint,
     Volume,
 )
+from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.app import DockSurfApp
 from docksurf_py.tui.ids import BOTTOM_BAR_ID, PICKER_LIST_ID, SEARCH_BAR_ID, TableID
@@ -87,7 +88,11 @@ async def _open(app: DockSurfApp, pilot, tab: TabID, key: str) -> DataTable:
 
 
 def _focus_row(app: DockSurfApp, tab: TabID, table: DataTable, match) -> None:
-    index = next(i for i, item in enumerate(app._tables.rows[tab]) if match(item))
+    index = next(
+        i
+        for i, item in enumerate(app._tables.rows[tab])
+        if not isinstance(item, RowGroup) and match(item)
+    )
     table.move_cursor(row=index)
 
 

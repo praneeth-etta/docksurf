@@ -23,7 +23,7 @@ class PruneScreen(ModalScreen):
     _LABELS = {
         "containers": "1. Stopped containers",
         "images": "2. Dangling images",
-        "volumes": "3. Unused volumes",
+        "volumes": "3. Unused anonymous volumes",
         "networks": "4. Unused networks",
         "system": "5. System-wide prune",
     }

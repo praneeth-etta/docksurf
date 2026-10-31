@@ -3,23 +3,25 @@
 from rich.markup import escape as _escape
 from textual.widgets import DataTable, TabbedContent
 
-from docksurf_py.core.docker import (
-    format_labels,
-    format_size,
-)
 from docksurf_py.core.models import ComposeProject
-from docksurf_py.core.render.cards import container_card, image_card, project_card
+from docksurf_py.core.render.cards import (
+    container_card,
+    image_card,
+    project_card,
+    volume_card,
+)
 from docksurf_py.core.render.images import image_tags
 from docksurf_py.core.render.topology import network_topology
+from docksurf_py.core.render.volumes import orphan_summary, safe_delete_body
 from docksurf_py.core.state.navigation import related_containers
+from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
-    markup_yellow,
 )
-from docksurf_py.tui.ids import DETAIL_PANE_ID
+from docksurf_py.tui.ids import DETAIL_PANE_ID, SAFE_DELETE_PANEL_ID
 from docksurf_py.tui.renderer.common import _Base
-from docksurf_py.tui.widgets import DetailPane
+from docksurf_py.tui.widgets import DetailPane, SafeDeletePanel
 
 
 def _dim(value: object) -> SafeMarkup:
@@ -99,33 +101,31 @@ class DetailPaneRenderer(_Base):
         if row >= len(volumes):
             return
         volume = volumes[row]
-
-        identity = {
-            "Mountpoint": volume.mountpoint,
-            "Driver": volume.driver,
-            "Labels": format_labels(volume.labels) if volume.labels else "None",
-        }
-        usage = {
-            "Used By": (
-                "\n".join(volume.used_by)
-                if volume.used_by
-                else markup_yellow("Orphaned (safe to delete)")
-            ),
-        }
-        # Size is fetched on-demand (`b`); once known it's cached and shown here.
+        safe = self.query_one(f"#{SAFE_DELETE_PANEL_ID}", SafeDeletePanel)
+        if isinstance(volume, RowGroup):
+            pane.clear_details()
+            safe.hide()
+            return
+        p = self._view.palette
         size = self._details.volume_size(volume.name)
-        if size is not None:
-            usage["Size on disk"] = format_size(size)
-        pane.update_details(
-            f"Volume: {volume.name}", {"Identity": identity, "Usage": usage}
+        pane.update_card(
+            volume_card(volume, size, related_containers(volume, self.snapshot), p)
         )
         pane.clear_topology()
+        if volume.used_by or self.snapshot is None:
+            safe.hide()
+        else:
+            orphans = orphan_summary(self.snapshot.volumes, self._details.volume_sizes)
+            safe.show_body(safe_delete_body(volume, size, orphans, p))
 
     def _show_network_details(self, pane: DetailPane, row: int) -> None:
         networks = self._tables.rows.get(TabID.NETWORKS, [])
         if row >= len(networks):
             return
         network = networks[row]
+        if isinstance(network, RowGroup):
+            pane.clear_details()
+            return
 
         identity = {
             "ID": _dim(network.id),

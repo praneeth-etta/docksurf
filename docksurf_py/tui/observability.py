@@ -180,6 +180,7 @@ class LiveStatsController(_Base):
     def _apply_system_df(self, df: SystemDf | None) -> None:
         if self._details.store_system_df(df, time.monotonic()):
             self._repaint_toolbar_line()
+            self._repaint_disk_panel()
 
     # --- `t`: on-demand running-process snapshot ---
 

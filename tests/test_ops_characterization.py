@@ -161,7 +161,8 @@ class DeletePlanTests(unittest.IsolatedAsyncioTestCase):
         refreshes: list[int] = []
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
-            await _focus(app, pilot, TabID.VOLUMES)
+            # Row 0 is the group header; the volume is row 1.
+            await _focus(app, pilot, TabID.VOLUMES, row=1)
             original = app.start_refresh
             app.start_refresh = lambda: (refreshes.append(1), original())[1]  # type: ignore[method-assign]
             with patch.object(app, "notify") as notify:
@@ -183,7 +184,8 @@ class BulkTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await _focus(app, pilot, TabID.VOLUMES)
-            await _mark_rows(app, pilot, TabID.VOLUMES, [0, 1, 2])
+            # IN USE header, busy, ORPHANED header, a, c: mark the three volumes.
+            await _mark_rows(app, pilot, TabID.VOLUMES, [1, 3, 4])
             with patch.object(app, "notify") as notify:
                 app.action_delete()
                 dialog = await _dialog(app)

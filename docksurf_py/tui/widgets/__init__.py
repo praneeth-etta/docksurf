@@ -15,6 +15,7 @@ from docksurf_py.tui.widgets.chip_bar import ChipBar
 from docksurf_py.tui.widgets.container_picker_screen import ContainerPickerScreen
 from docksurf_py.tui.widgets.detail_pane import DetailPane
 from docksurf_py.tui.widgets.dialogs import ConfirmDialog, PromptField, PromptScreen
+from docksurf_py.tui.widgets.disk_panel import DiskPanel
 from docksurf_py.tui.widgets.help_screen import HelpScreen
 from docksurf_py.tui.widgets.inspect_screen import InspectScreen
 from docksurf_py.tui.widgets.layer_history_screen import LayerHistoryScreen
@@ -28,6 +29,7 @@ from docksurf_py.tui.widgets.log_pane import (
 )
 from docksurf_py.tui.widgets.prune_screen import PruneScreen
 from docksurf_py.tui.widgets.pull_progress_screen import PullProgressScreen
+from docksurf_py.tui.widgets.safe_delete_panel import SafeDeletePanel
 from docksurf_py.tui.widgets.search_bar import SearchBar
 from docksurf_py.tui.widgets.system_df_screen import SystemDfScreen
 from docksurf_py.tui.widgets.tables import (
@@ -46,6 +48,8 @@ __all__ = [
     "VolumeTable",
     "NetworkTable",
     "DetailPane",
+    "DiskPanel",
+    "SafeDeletePanel",
     "ConfirmDialog",
     "PromptField",
     "PromptScreen",

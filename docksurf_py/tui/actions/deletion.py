@@ -18,7 +18,7 @@ from docksurf_py.core.state.ops import (
     Refusal,
     bind_delete_command,
 )
-from docksurf_py.core.state.tables import row_key
+from docksurf_py.core.state.tables import RowGroup, row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.widgets import ConfirmDialog
@@ -92,6 +92,10 @@ class ResourceDeletionHandler(_Base):
             # delete, route to the project-wide teardown instead (already
             # confirms via ConfirmDialog when Config.confirm_compose_down).
             self.action_compose_down()
+            return
+
+        if isinstance(item, RowGroup):
+            self.notify(f"Select a {entry.label}, or mark several", severity="warning")
             return
 
         plan = self._plan_delete(active, item)

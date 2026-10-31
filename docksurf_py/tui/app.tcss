@@ -74,6 +74,15 @@ BottomBar {
     height: 2fr;
 }
 
+/* The one place a border carries status (design board 6 says it never does):
+   `safe to delete` is destructive advice, so its border stays `warning`. It is
+   the card's whole point, and it only shows for an orphaned volume. */
+#side-column > .panel.-warning {
+    height: auto;
+    border: round $warning;
+    border-title-color: $warning;
+}
+
 /* Full-view logs: the list is hidden, so the side column takes the width. */
 #side-column.logs-full {
     margin-left: 0;

@@ -138,7 +138,7 @@ class TintAndGutterTests(unittest.IsolatedAsyncioTestCase):
     async def test_tabs_not_yet_redesigned_have_no_cursor_gutter(self) -> None:
         app = DockSurfApp(docker=MockDockerService(_snapshot))
         async with app.run_test(size=(160, 30)):
-            for tab in (TabID.VOLUMES, TabID.NETWORKS):
+            for tab in (TabID.NETWORKS,):
                 self.assertFalse(app._resource_registry[tab].cursor_gutter)
 
 

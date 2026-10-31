@@ -7,7 +7,6 @@ from rich.style import Style
 from textual.coordinate import Coordinate
 from textual.widgets import DataTable, Input, Static, TabbedContent
 
-from docksurf_py.core.docker import format_size
 from docksurf_py.core.models import (
     ComposeProject,
     Container,
@@ -23,16 +22,14 @@ from docksurf_py.core.render.containers import (
 from docksurf_py.core.render.images import image_row_cells
 from docksurf_py.core.render.markup import (
     network_containers_markup,
-    truncate,
 )
 from docksurf_py.core.render.palette import fg
+from docksurf_py.core.render.volumes import volume_group_cells, volume_row_cells
 from docksurf_py.core.session import save_session
-from docksurf_py.core.state.tables import ALL_CHIP, TablesState, row_key
+from docksurf_py.core.state.tables import ALL_CHIP, RowGroup, TablesState, row_key
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
-    markup_green,
-    markup_yellow,
 )
 from docksurf_py.tui.ids import (
     EMPTY_STATE_HINTS,
@@ -183,19 +180,19 @@ class TableRenderer(_Base):
             )
         self._finish_populate(TabID.IMAGES, table, rows)
 
-    def _populate_volume_table(self, table: DataTable, rows: list[Volume]) -> None:
-        for v in rows:
-            status = markup_green("In Use") if v.used_by else markup_yellow("Orphaned")
-            raw = truncate(v.name, NAME_MAX_CHARS, middle=True)
-            size_bytes = self._details.volume_size(v.name)
-            # Computed on-demand only (`b`) — never on the snapshot path, it's
-            # too slow to fetch on every refresh (see `DockerClient.volume_sizes`).
-            size = (
-                format_size(size_bytes)
-                if size_bytes is not None
-                else SafeMarkup("[dim]—[/]")
-            )
-            _safe_row(table, self._mark_cell(TabID.VOLUMES, v), raw, size, status)
+    def _populate_volume_table(
+        self, table: DataTable, rows: list[RowGroup | Volume]
+    ) -> None:
+        """Write volume rows under their `IN USE` / `ORPHANED` group headers.
+        Sizes are computed on demand only (`b`), never on the snapshot path:
+        too slow to fetch on every refresh (see `DockerClient.volume_sizes`)."""
+        p = self._view.palette
+        for row in rows:
+            if isinstance(row, RowGroup):
+                cells = volume_group_cells(row, self._details.volume_sizes, p)
+            else:
+                cells = volume_row_cells(row, self._details.volume_size(row.name), p)
+            _safe_row(table, self._gutter_cell(TabID.VOLUMES, row, False), *cells)
         self._finish_populate(TabID.VOLUMES, table, rows)
 
     def _populate_network_table(self, table: DataTable, rows: list[Network]) -> None:
@@ -218,12 +215,15 @@ class TableRenderer(_Base):
     def _gutter_cell(
         self, tab_id: TabID, item: object, is_cursor: bool
     ) -> SafeMarkup | str:
-        """Leading 2-column cell: a project header's chevron, `▌` under the
+        """Leading 2-column cell: a group header's chevron, `▌` under the
         cursor, `✓` when the cursor row is marked, else the mark glyph. Only
         tabs whose entry sets `cursor_gutter` draw the cursor."""
         p = self._view.palette
         if isinstance(item, ComposeProject):
             return chevron(self._tables.is_collapsed(item.name), p)
+        if isinstance(item, RowGroup):
+            collapsed = self._tables.is_group_collapsed(item.tab, item.key)
+            return chevron(collapsed, p, item.role)
         marked = self._tables.is_marked(tab_id, row_key(item))
         if is_cursor and self._resource_registry[tab_id].cursor_gutter:
             if marked:
@@ -235,7 +235,7 @@ class TableRenderer(_Base):
         """Background for a header (`surface`) or marked (`marked_bg`) row;
         None on terminal-native themes, which have no colours to tint with."""
         p = self._view.palette
-        if isinstance(item, ComposeProject):
+        if isinstance(item, (ComposeProject, RowGroup)):
             colour = p.surface
         elif self._tables.is_marked(tab_id, row_key(item)):
             colour = p.marked_bg

@@ -1131,27 +1131,51 @@
     "columns": [
       "",
       "Name",
-      "Size",
-      "Status"
+      "Project",
+      "Driver",
+      "        Size",
+      "Used by"
     ],
     "rows": [
       [
+        "[#9ece6a]▾[/]",
+        "[bold][#9ece6a]● IN USE · 1[/][/]",
         "",
-        "pgdata",
-        "[dim]—[/]",
-        "[green]In Use[/]"
+        "",
+        "[#7a879d]       · · ·[/]",
+        ""
       ],
       [
         "",
-        "orphan",
-        "[dim]—[/]",
-        "[yellow]Orphaned[/]"
+        "[bold #f7ffff]pgdata[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#cdd6e4]shop-db[/]"
+      ],
+      [
+        "[#e5b567]▾[/]",
+        "[bold][#e5b567]○ ORPHANED · 2[/][/]",
+        "",
+        "",
+        "[#7a879d]       · · ·[/]",
+        "[#f7ffff on #253047] P [/][#7a879d] prune orphans[/]"
       ],
       [
         "",
-        "project_extreme…uncation_check",
-        "[dim]—[/]",
-        "[yellow]Orphaned[/]"
+        "[bold #f7ffff]orphan[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#7a879d]—[/]"
+      ],
+      [
+        "",
+        "[bold #f7ffff]project_extreme…uncation_check[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#7a879d]—[/]"
       ]
     ],
     "table_visible": true,
@@ -1161,57 +1185,105 @@
     "columns": [
       "",
       "Name ▼",
-      "Size",
-      "Status"
+      "Project",
+      "Driver",
+      "        Size",
+      "Used by"
     ],
     "rows": [
       [
+        "[#9ece6a]▾[/]",
+        "[bold][#9ece6a]● IN USE · 1[/][/]",
         "",
-        "project_extreme…uncation_check",
-        "[dim]—[/]",
-        "[yellow]Orphaned[/]"
+        "",
+        "[#7a879d]       · · ·[/]",
+        ""
       ],
       [
         "",
-        "pgdata",
-        "[dim]—[/]",
-        "[green]In Use[/]"
+        "[bold #f7ffff]pgdata[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#cdd6e4]shop-db[/]"
+      ],
+      [
+        "[#e5b567]▾[/]",
+        "[bold][#e5b567]○ ORPHANED · 2[/][/]",
+        "",
+        "",
+        "[#7a879d]       · · ·[/]",
+        "[#f7ffff on #253047] P [/][#7a879d] prune orphans[/]"
       ],
       [
         "",
-        "orphan",
-        "[dim]—[/]",
-        "[yellow]Orphaned[/]"
+        "[bold #f7ffff]project_extreme…uncation_check[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#7a879d]—[/]"
+      ],
+      [
+        "",
+        "[bold #f7ffff]orphan[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#7a879d]—[/]"
       ]
     ],
     "table_visible": true,
     "empty_message": null
   },
-  "volumes/sorted_status": {
+  "volumes/sorted_used_by": {
     "columns": [
       "",
       "Name",
-      "Size",
-      "Status ▲"
+      "Project",
+      "Driver",
+      "        Size",
+      "Used by ▲"
     ],
     "rows": [
       [
+        "[#9ece6a]▾[/]",
+        "[bold][#9ece6a]● IN USE · 1[/][/]",
         "",
-        "orphan",
-        "[dim]—[/]",
-        "[yellow]Orphaned[/]"
+        "",
+        "[#7a879d]       · · ·[/]",
+        ""
       ],
       [
         "",
-        "project_extreme…uncation_check",
-        "[dim]—[/]",
-        "[yellow]Orphaned[/]"
+        "[bold #f7ffff]pgdata[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#cdd6e4]shop-db[/]"
+      ],
+      [
+        "[#e5b567]▾[/]",
+        "[bold][#e5b567]○ ORPHANED · 2[/][/]",
+        "",
+        "",
+        "[#7a879d]       · · ·[/]",
+        "[#f7ffff on #253047] P [/][#7a879d] prune orphans[/]"
       ],
       [
         "",
-        "pgdata",
-        "[dim]—[/]",
-        "[green]In Use[/]"
+        "[bold #f7ffff]orphan[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#7a879d]—[/]"
+      ],
+      [
+        "",
+        "[bold #f7ffff]project_extreme…uncation_check[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#7a879d]—[/]"
       ]
     ],
     "table_visible": true,
@@ -1221,15 +1293,27 @@
     "columns": [
       "",
       "Name",
-      "Size",
-      "Status"
+      "Project",
+      "Driver",
+      "        Size",
+      "Used by"
     ],
     "rows": [
       [
+        "[#9ece6a]▾[/]",
+        "[bold][#9ece6a]● IN USE · 1[/][/]",
         "",
-        "pgdata",
-        "[dim]—[/]",
-        "[green]In Use[/]"
+        "",
+        "[#7a879d]       · · ·[/]",
+        ""
+      ],
+      [
+        "",
+        "[bold #f7ffff]pgdata[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]       · · ·[/]",
+        "[#cdd6e4]shop-db[/]"
       ]
     ],
     "table_visible": true,
@@ -1239,8 +1323,10 @@
     "columns": [
       "",
       "Name",
-      "Size",
-      "Status"
+      "Project",
+      "Driver",
+      "        Size",
+      "Used by"
     ],
     "rows": [],
     "table_visible": false,

@@ -46,6 +46,7 @@ from docksurf_py.core.render.topology import (
     network_topology,
 )
 from docksurf_py.core.session import SessionState
+from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.types import LogLine, LogOptions, TabID
 from docksurf_py.tui.actions import (
     ContainerActionHandler,
@@ -2108,6 +2109,85 @@ class VolumeActionTests(unittest.IsolatedAsyncioTestCase):
             await wait_until(lambda: app._details.volume_sizes == {"vol1": 4096})
 
 
+class RowGroupActionTests(unittest.IsolatedAsyncioTestCase):
+    """Actions when the cursor is on a generic `RowGroup` header. No tab builds
+    groups yet, so the focused row is stubbed; the actions must not treat the
+    header as a volume."""
+
+    GROUP = RowGroup(TabID.VOLUMES, "orphaned", "ORPHANED", items=(_volume("a"),))
+
+    async def _on_group(self, app: DockSurfApp, pilot) -> None:
+        await pilot.pause()
+        await pilot.press("3")
+        await wait_until(lambda: app.query_one(TabbedContent).active == TabID.VOLUMES)
+        await wait_until(lambda: bool(app._tables.rows.get(TabID.VOLUMES)))
+
+    def _app(self) -> tuple[DockSurfApp, MockDockerService]:
+        svc = MockDockerService(lambda: DockerSnapshot([], [], [_volume("a")], []))
+        return DockSurfApp(docker=svc), svc
+
+    async def test_space_toggles_collapse_and_never_marks(self) -> None:
+        app, _ = self._app()
+        async with app.run_test() as pilot:
+            await self._on_group(app, pilot)
+            with patch.object(app, "_get_focused_resource", return_value=self.GROUP):
+                app.action_toggle_mark()
+                self.assertIn((TabID.VOLUMES, "orphaned"), app._tables.collapsed_groups)
+                app.action_toggle_mark()
+                self.assertEqual(app._tables.collapsed_groups, set())
+            self.assertFalse(app._tables.has_marks(TabID.VOLUMES))
+
+    async def test_delete_on_a_group_header_refuses_without_planning(self) -> None:
+        app, svc = self._app()
+        async with app.run_test() as pilot:
+            await self._on_group(app, pilot)
+            with (
+                patch.object(app, "_get_focused_resource", return_value=self.GROUP),
+                patch.object(app, "notify") as notify,
+            ):
+                app.action_delete()
+                await wait_until(lambda: notify.called)
+            self.assertIn("Select a volume, or mark several", notify.call_args.args[0])
+            self.assertFalse(any(c[0] == "remove_volume" for c in svc.calls))
+            self.assertFalse(
+                any(isinstance(s, ConfirmDialog) for s in app.screen_stack)
+            )
+
+    async def test_inspect_on_a_group_header_does_not_query_docker(self) -> None:
+        app, svc = self._app()
+        async with app.run_test() as pilot:
+            await self._on_group(app, pilot)
+            with (
+                patch.object(app, "_get_focused_resource", return_value=self.GROUP),
+                patch.object(app, "notify") as notify,
+            ):
+                app.action_inspect()
+            self.assertEqual(notify.call_args.kwargs.get("severity"), "warning")
+            self.assertFalse(any(c[0] == "inspect_resource" for c in svc.calls))
+
+    async def test_yank_on_a_group_header_has_nothing_to_copy(self) -> None:
+        app, _ = self._app()
+        async with app.run_test() as pilot:
+            await self._on_group(app, pilot)
+            with (
+                patch.object(app, "_get_focused_resource", return_value=self.GROUP),
+                patch.object(app, "notify") as notify,
+            ):
+                app.action_yank()
+            self.assertEqual(notify.call_args.kwargs.get("severity"), "warning")
+
+    async def test_jump_on_a_group_header_finds_no_container(self) -> None:
+        app, _ = self._app()
+        async with app.run_test() as pilot:
+            await self._on_group(app, pilot)
+            with (
+                patch.object(app, "_get_focused_resource", return_value=self.GROUP),
+                patch.object(app, "notify") as notify,
+            ):
+                app.action_jump_related()
+            self.assertIn("Nothing to jump to", notify.call_args.args[0])
+
+
 class NetworkActionTests(unittest.IsolatedAsyncioTestCase):
     async def _on_networks(self, app: DockSurfApp, pilot) -> None:
         app.query_one(TabbedContent).active = TabID.NETWORKS
@@ -2881,7 +2961,8 @@ class DeleteForceTests(unittest.IsolatedAsyncioTestCase):
             app.query_one(TabbedContent).active = TabID.VOLUMES
             await pilot.pause()
             await wait_until(lambda: bool(app._tables.rows.get(TabID.VOLUMES)))
-            app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=0)
+            # Row 0 is the IN USE / ORPHANED group header; the volume is row 1.
+            app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=1)
 
             with patch.object(app, "notify") as notify:
                 app.action_delete()
@@ -3141,7 +3222,8 @@ class ClipboardAndPortTests(unittest.IsolatedAsyncioTestCase):
             app.query_one(TabbedContent).active = TabID.VOLUMES
             await pilot.pause()
             await wait_until(lambda: bool(app._tables.rows.get(TabID.VOLUMES)))
-            app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=0)
+            # Row 0 is the IN USE / ORPHANED group header; the volume is row 1.
+            app.query_one(f"#{TableID.VOLUMES}", DataTable).move_cursor(row=1)
 
             app.action_yank()
             await pilot.pause()

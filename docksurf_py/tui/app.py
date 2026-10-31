@@ -43,6 +43,14 @@ from docksurf_py.core.render.images import (
     TAG_WIDTH,
     status_rank,
 )
+from docksurf_py.core.render.volumes import (
+    DRIVER_WIDTH,
+    PROJECT_WIDTH,
+    USED_BY_WIDTH,
+    VOLUME_NAME_WIDTH,
+    VOLUME_SIZE_WIDTH,
+    volume_project,
+)
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.session import SessionState, load_session, save_session
 from docksurf_py.core.state.details import DetailCache, LiveTargets
@@ -64,6 +72,7 @@ from docksurf_py.core.state.tables import (
     matches_image,
     matches_network,
     matches_volume,
+    volume_group_specs,
 )
 from docksurf_py.core.state.view import ViewState
 from docksurf_py.core.types import LogOptions, SafeMarkup, TabID
@@ -88,6 +97,7 @@ from docksurf_py.tui.ids import (
     CHIP_BAR_ID,
     CONNECTION_BANNER_ID,
     DETAIL_PANE_ID,
+    DISK_PANEL_ID,
     EMPTY_STATE_IDS,
     FILTER_PLACEHOLDERS,
     LAYERS_PANEL_ID,
@@ -97,6 +107,7 @@ from docksurf_py.tui.ids import (
     LOG_PANE_ID,
     MAIN_CONTAINER_ID,
     REFRESH_LOADING_ID,
+    SAFE_DELETE_PANEL_ID,
     SEARCH_BAR_ID,
     SIDE_COLUMN_ID,
     TOOLBAR_LINE_ID,
@@ -122,12 +133,14 @@ from docksurf_py.tui.widgets import (
     ChipBar,
     ContainerTable,
     DetailPane,
+    DiskPanel,
     HelpScreen,
     ImageTable,
     LayersPanel,
     LivePanel,
     LogPane,
     NetworkTable,
+    SafeDeletePanel,
     SearchBar,
     ToolbarLine,
     TopBar,
@@ -261,6 +274,9 @@ class AppContext(Protocol):
     def _select_pending_focus(self) -> None: ...
     def _images_footer(self, marked: list) -> SafeMarkup: ...
     def _images_toolbar_line(self, width: int) -> SafeMarkup: ...
+    def _volumes_footer(self, marked: list) -> SafeMarkup: ...
+    def _volumes_toolbar_line(self, width: int) -> SafeMarkup: ...
+    def _repaint_disk_panel(self) -> None: ...
     def _sync_side_logs(self) -> None: ...
     def _sync_log_layout(self) -> None: ...
     def _exit_logs_full(self) -> None: ...
@@ -494,15 +510,29 @@ class DockSurfApp(
                     matches=matches_volume,
                     sort_keys={
                         "Name": lambda v: v.name.lower(),
+                        "Project": lambda v: volume_project(v).lower(),
+                        "Driver": lambda v: v.driver.lower(),
                         "Size": lambda v: self._details.volume_sizes.get(v.name, -1),
-                        "Status": lambda v: bool(v.used_by),
+                        "Used by": lambda v: len(v.used_by),
                     },
+                    groups=volume_group_specs(lambda: self._details.volume_sizes),
+                    grouped_by="usage",
                 ),
                 table_id=TableID.VOLUMES,
-                columns=("Name", "Size", "Status"),
+                columns=("Name", "Project", "Driver", "Size", "Used by"),
                 populate=self._populate_volume_table,
                 show_details=self._show_volume_details,
-                column_widths={"Size": 9, "Status": 9},
+                column_widths={
+                    "Name": VOLUME_NAME_WIDTH,
+                    "Project": PROJECT_WIDTH,
+                    "Driver": DRIVER_WIDTH,
+                    "Size": VOLUME_SIZE_WIDTH,
+                    "Used by": USED_BY_WIDTH,
+                },
+                right_columns=frozenset({"Size"}),
+                footer=self._volumes_footer,
+                cursor_gutter=True,
+                toolbar_line=self._volumes_toolbar_line,
             ),
             TabID.NETWORKS: ResourceEntry(
                 kind=ResourceKind(
@@ -564,6 +594,8 @@ class DockSurfApp(
                 yield DetailPane(id=DETAIL_PANE_ID, classes="panel")
                 yield LivePanel(id=LIVE_PANEL_ID, classes="panel")
                 yield LayersPanel(id=LAYERS_PANEL_ID, classes="panel")
+                yield SafeDeletePanel(id=SAFE_DELETE_PANEL_ID, classes="panel -warning")
+                yield DiskPanel(id=DISK_PANEL_ID, classes="panel")
                 yield LogPane(
                     id=LOG_PANE_ID,
                     classes="panel",

@@ -413,10 +413,10 @@ def _scenarios() -> dict[str, tuple[TabID, Callable[[], DockerSnapshot], Scenari
             rich_snapshot,
             lambda a, p: sort_twice(a, p, VO, "Name"),
         ),
-        "volumes/sorted_status": (
+        "volumes/sorted_used_by": (
             VO,
             rich_snapshot,
-            lambda a, p: _sort(a, p, VO, "Status"),
+            lambda a, p: _sort(a, p, VO, "Used by"),
         ),
         "volumes/filtered": (VO, rich_snapshot, lambda a, p: _filter(a, p, "pg")),
         "volumes/empty": (VO, empty, _noop),

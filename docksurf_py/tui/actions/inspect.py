@@ -7,7 +7,7 @@ from textual import work
 from textual.widgets import TabbedContent
 
 from docksurf_py.core.models import ComposeProject, Image
-from docksurf_py.core.state.tables import row_key
+from docksurf_py.core.state.tables import RowGroup, row_key
 from docksurf_py.tui.actions.common import _Base, _display_name
 from docksurf_py.tui.widgets import InspectScreen
 
@@ -26,6 +26,11 @@ class InspectHandler(_Base):
             self.notify(
                 "Select a container within the project to inspect",
                 severity="warning",
+            )
+            return
+        if isinstance(item, RowGroup):
+            self.notify(
+                "Select an item within the group to inspect", severity="warning"
             )
             return
         key = row_key(item)

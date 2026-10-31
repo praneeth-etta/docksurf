@@ -23,21 +23,36 @@ from docksurf_py.core.render.chrome import (
     top_bar,
 )
 from docksurf_py.core.render.images import images_footer
-from docksurf_py.core.render.observability import images_disk_line
+from docksurf_py.core.render.observability import images_disk_line, render_df_bars
+from docksurf_py.core.render.palette import fg
+from docksurf_py.core.render.volumes import (
+    known_sizes,
+    volumes_footer,
+    volumes_toolbar_line,
+)
 from docksurf_py.core.state.navigation import related_containers
 from docksurf_py.core.state.status import RunState, classify
+from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.state.view import LayoutMode
 from docksurf_py.core.types import SafeMarkup, TabID
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
     CHIP_BAR_ID,
+    DISK_PANEL_ID,
     FILTER_PLACEHOLDERS,
     LIST_PANEL_ID,
     SEARCH_BAR_ID,
     TOOLBAR_LINE_ID,
     TOP_BAR_ID,
 )
-from docksurf_py.tui.widgets import BottomBar, ChipBar, SearchBar, ToolbarLine, TopBar
+from docksurf_py.tui.widgets import (
+    BottomBar,
+    ChipBar,
+    DiskPanel,
+    SearchBar,
+    ToolbarLine,
+    TopBar,
+)
 
 if TYPE_CHECKING:
     from docksurf_py.tui.app import AppContext
@@ -61,6 +76,7 @@ class ChromeController(_Base):
         self._repaint_top_bar()
         self._repaint_bottom_bar()
         self._repaint_list_panel()
+        self._repaint_disk_panel()
 
     def action_toggle_side(self) -> None:
         """`z`: hide or show the side column, so the list takes the full width.
@@ -124,7 +140,9 @@ class ChromeController(_Base):
         entry = self._resource_registry[active]
         panel = self.query_one(f"#{LIST_PANEL_ID}")
         rows = self._tables.rows.get(active, [])
-        shown = sum(1 for row in rows if not isinstance(row, ComposeProject))
+        shown = sum(
+            1 for row in rows if not isinstance(row, (ComposeProject, RowGroup))
+        )
         total = (
             len(entry.kind.snapshot_items(self.snapshot))
             if self.snapshot is not None
@@ -134,7 +152,7 @@ class ChromeController(_Base):
             active,
             shown,
             self._tables.sort(active),
-            grouped=entry.kind.groups_by_project,
+            grouped=entry.kind.groups_by_project or entry.kind.grouped_by,
             total=total,
         )
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", SearchBar)
@@ -177,6 +195,27 @@ class ChromeController(_Base):
             self._details.system_df, images, width, self._view.palette
         )
 
+    def _repaint_disk_panel(self) -> None:
+        """The Volumes tab's disk bars from the cached `docker system df`, or a
+        placeholder until the first fetch lands."""
+        if not self.is_running:
+            return
+        panel = self.query_one(f"#{DISK_PANEL_ID}", DiskPanel)
+        df = self._details.system_df
+        p = self._view.palette
+        if df is None:
+            panel.show_message(fg(p, "muted", "· · ·  computing (w to refresh)"))
+        else:
+            panel.show_disk(lambda width: render_df_bars(df, p, width))
+
+    def _volumes_footer(self, marked: list[Volume]) -> SafeMarkup:
+        return volumes_footer(self._view.palette)
+
+    def _volumes_toolbar_line(self, width: int) -> SafeMarkup:
+        volumes = self.snapshot.volumes if self.snapshot is not None else []
+        known = len(known_sizes(volumes, self._details.volume_sizes))
+        return volumes_toolbar_line(known, len(volumes), width, self._view.palette)
+
     def _repaint_chip_bar(self, active: TabID, query: str) -> None:
         chips = self._resource_registry[active].kind.chips
         markup = ""
@@ -204,6 +243,8 @@ class ChromeController(_Base):
             row = "volume"
         elif isinstance(item, Network):
             row = "network"
+        elif isinstance(item, RowGroup):
+            row = "volume_group" if active == TabID.VOLUMES else "network_group"
         return HintContext(
             tab=active,
             row=row,

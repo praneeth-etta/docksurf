@@ -8,7 +8,7 @@ from textual.coordinate import Coordinate
 from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.state.ops import BulkJob, BulkResult, run_bulk
-from docksurf_py.core.state.tables import row_key
+from docksurf_py.core.state.tables import RowGroup, row_key
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base
 
@@ -30,12 +30,18 @@ class SelectionHandler(_Base):
         active = self.query_one(TabbedContent).active
         if self._resource_registry.get(active) is None:
             return
-        # A project header has no mark of its own — space still collapses it.
+        # A group header has no mark of its own — space still collapses it.
+        # A Compose project header:
         if self._focused_is_project_header():
             self.action_toggle_group()
             return
         item = self._get_focused_resource(active)
         if item is None:
+            return
+        # Same for a generic group header: space collapses/expands it.
+        if isinstance(item, RowGroup):
+            self._tables.toggle_group_collapse(item.tab, item.key)
+            self._rerender_active_table()
             return
         key = row_key(item)
         if key is None:
