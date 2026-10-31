@@ -3,7 +3,8 @@ the marks, sort, collapsed Compose projects and dirty flags behind them.
 
 `TablesState` owns that state and the decisions over it (row building, mark
 pruning, sort cycling); the Textual layer only turns rows into cells and
-moves the cursor. Also row identity, Compose grouping and search matching.
+moves the cursor. Also row identity, Compose and generic row grouping and
+search matching.
 """
 
 from collections import defaultdict
@@ -18,6 +19,7 @@ from docksurf_py.core.models import (
     Network,
     Volume,
 )
+from docksurf_py.core.render.volumes import ORPHANED_KEY, volume_order_key
 from docksurf_py.core.service import DockerService
 from docksurf_py.core.state.ops import DeletePlan, Refusal
 from docksurf_py.core.state.status import RunState, classify
@@ -31,8 +33,44 @@ SortState = tuple[str, bool]
 DEFAULT_SORT: dict[TabID, SortState] = {TabID.IMAGES: ("Size", True)}
 
 
+@dataclass(frozen=True)
+class RowGroup:
+    """A non-Compose group header row (Volumes/Networks): `● IN USE · 8`.
+
+    `key` identifies the group within its tab (`in_use`, `orphaned`, ...);
+    `role` is the palette role its header is coloured with and `glyph` the
+    mark before its label (`●`); `items` are the rows under it, whether or not
+    the group is collapsed.
+    """
+
+    tab: TabID
+    key: str
+    label: str
+    note: str = ""
+    role: str = "muted"
+    items: tuple = ()
+    glyph: str = ""
+
+
+@dataclass(frozen=True)
+class GroupSpec:
+    """How one `RowGroup` is formed. A kind's specs are tried in order and the
+    first whose `matches(item, snapshot)` is true takes the item. `order_key`
+    orders rows inside the group when no column sort is active."""
+
+    key: str
+    label: str
+    role: str
+    note: str
+    matches: Callable[[Any, DockerSnapshot], bool]
+    order_key: Callable[[Any], Any] | None = None
+    glyph: str = ""
+
+
 def row_key(item: Any) -> RowKey | None:
     """Stable identity for a row-backing object, for selection restore."""
+    if isinstance(item, RowGroup):
+        return ("group", f"{item.tab}:{item.key}")
     if isinstance(item, Container):
         return ("container", item.id)
     if isinstance(item, ComposeProject):
@@ -147,6 +185,35 @@ IMAGE_CHIPS: tuple[Chip, ...] = (
 )
 
 
+def volume_group_specs(sizes: Callable[[], Mapping[str, int]]) -> tuple[GroupSpec, ...]:
+    """IN USE / ORPHANED. `sizes` is read when rows are built, since the size
+    cache is replaced as `b` computes it."""
+
+    def order(v: Volume) -> Any:
+        return volume_order_key(v, sizes())
+
+    return (
+        GroupSpec(
+            "in_use",
+            "IN USE",
+            "success",
+            "",
+            lambda v, snap: bool(v.used_by),
+            order,
+            "●",
+        ),
+        GroupSpec(
+            ORPHANED_KEY,
+            "ORPHANED",
+            "warning",
+            "not mounted by any container",
+            lambda v, snap: True,
+            order,
+            "○",
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class Reveal:
     """What `TablesState.reveal` had to change to make a row visible.
@@ -173,7 +240,8 @@ class ResourceKind:
     Compose project grouping (header rows + collapsible service rows).
     `plan_delete` decides how one item is deleted (or why it can't be);
     None means the type has no delete. `chips` are the tab's status filters;
-    an implicit `all` chip (no filtering) comes first.
+    an implicit `all` chip (no filtering) comes first. `groups` bucket the rows
+    under collapsible `RowGroup` headers; empty means a flat list.
     """
 
     label: str  # singular, human-readable — used in "No {label} selected"
@@ -185,6 +253,8 @@ class ResourceKind:
         None
     )
     chips: tuple[Chip, ...] = ()
+    groups: tuple[GroupSpec, ...] = ()
+    grouped_by: str = ""  # what `groups` split by, for the panel title (`usage`)
 
 
 class TablesState:
@@ -217,6 +287,8 @@ class TablesState:
         self.dirty: set[TabID] = set()
         # Compose project names whose service rows are hidden.
         self.collapsed_projects: set[str] = set()
+        # `RowGroup`s (tab, key) whose item rows are hidden.
+        self.collapsed_groups: set[tuple[TabID, str]] = set()
         # Active status chip per tab (`ALL_CHIP` = no chip filter).
         self.active_chip: dict[TabID, str] = {tab: ALL_CHIP for tab in self.kinds}
         # A row to select once its tab becomes active (a cross-tab jump).
@@ -248,17 +320,22 @@ class TablesState:
 
     def build_rows(self, tab: TabID, snapshot: DockerSnapshot, query: str = "") -> list:
         """Filter by `query`, then by the active chip, apply the tab's sort,
-        group/collapse Compose projects where the kind asks for it, and store
-        the result as the tab's rows. Grouping runs last, so a project header
-        only appears with its matching services. Doesn't touch the dirty flag
-        (see `mark_clean`)."""
+        group/collapse Compose projects or `RowGroup`s where the kind asks for
+        it, and store the result as the tab's rows. Grouping runs last, so a
+        header only appears with its matching items. Doesn't touch the dirty
+        flag (see `mark_clean`)."""
         kind = self.kinds[tab]
         items = self._queried(tab, snapshot, query)
         chip = self._active_chip(tab)
         if chip is not None:
             items = [item for item in items if chip.matches(item)]
         items = self._sorted(tab, items)
-        rows = self._grouped(tab, items) if kind.groups_by_project else items
+        if kind.groups_by_project:
+            rows = self._grouped(tab, items)
+        elif kind.groups:
+            rows = self._bucketed(tab, items, snapshot)
+        else:
+            rows = items
         self.rows[tab] = rows
         return rows
 
@@ -349,6 +426,42 @@ class TablesState:
             if project.name not in self.collapsed_projects:
                 rows.extend(project.containers)
         rows.extend(standalone)
+        return rows
+
+    def _bucketed(self, tab: TabID, items: list, snapshot: DockerSnapshot) -> list:
+        """Header + rows per non-empty group, in spec order. An item no spec
+        claims is kept, ungrouped after the last group, rather than vanishing."""
+        specs = self.kinds[tab].groups
+        buckets: dict[str, list] = {spec.key: [] for spec in specs}
+        unclaimed: list = []
+        for item in items:
+            spec = next((s for s in specs if s.matches(item, snapshot)), None)
+            if spec is None:
+                unclaimed.append(item)
+            else:
+                buckets[spec.key].append(item)
+        column_sorted = self._sort_spec(tab) is not None
+        rows: list = []
+        for spec in specs:
+            members = buckets[spec.key]
+            if not members:
+                continue
+            if spec.order_key is not None and not column_sorted:
+                members = sorted(members, key=spec.order_key)
+            rows.append(
+                RowGroup(
+                    tab,
+                    spec.key,
+                    spec.label,
+                    spec.note,
+                    spec.role,
+                    tuple(members),
+                    spec.glyph,
+                )
+            )
+            if (tab, spec.key) not in self.collapsed_groups:
+                rows.extend(members)
+        rows.extend(unclaimed)
         return rows
 
     # --- Reveal / jump -------------------------------------------------------
@@ -455,4 +568,18 @@ class TablesState:
             self.collapsed_projects.discard(project)
             return False
         self.collapsed_projects.add(project)
+        return True
+
+    # --- Row-group collapse --------------------------------------------------
+
+    def is_group_collapsed(self, tab: TabID, key: str) -> bool:
+        return (tab, key) in self.collapsed_groups
+
+    def toggle_group_collapse(self, tab: TabID, key: str) -> bool:
+        """Flip a `RowGroup`'s collapsed state; returns whether it is now collapsed."""
+        entry = (tab, key)
+        if entry in self.collapsed_groups:
+            self.collapsed_groups.discard(entry)
+            return False
+        self.collapsed_groups.add(entry)
         return True

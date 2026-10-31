@@ -16,6 +16,7 @@ from docksurf_py.core.models import (
 from docksurf_py.core.state.ops import (
     BulkResult,
     DeletePlan,
+    OrphanPrunePlan,
     Refusal,
     already_running_reason,
     not_running_reason,
@@ -23,6 +24,7 @@ from docksurf_py.core.state.ops import (
     plan_container_delete,
     plan_image_delete,
     plan_network_delete,
+    plan_orphan_prune,
     plan_volume_delete,
     rebuild_skip_reason,
     run_bulk,
@@ -35,6 +37,12 @@ def _docker() -> MagicMock:
     for name in ("remove_container", "remove_image", "remove_volume", "remove_network"):
         getattr(docker, name).return_value = CommandResult.success()
     return docker
+
+
+def _volume(name: str, used_by: list[str] | None = None) -> Volume:
+    return Volume(
+        name=name, driver="local", mountpoint="/m", used_by=used_by or [], labels={}
+    )
 
 
 def _image(repo: str, tag: str, used_by: list[str] | None = None) -> Image:
@@ -173,3 +181,73 @@ class GuardTests(unittest.TestCase):
             rebuild_skip_reason(c, {"web"}),
             "No build defined for service 'db' — nothing to rebuild",
         )
+
+
+class OrphanPruneTests(unittest.TestCase):
+    def _volumes(self) -> list[Volume]:
+        return [_volume("a"), _volume("b"), _volume("busy", used_by=["web"])]
+
+    def test_one_delete_job_per_orphan_with_volume_keys(self) -> None:
+        plan = plan_orphan_prune(_docker(), self._volumes()[:2], {})
+        self.assertIsInstance(plan, OrphanPrunePlan)
+        assert isinstance(plan, OrphanPrunePlan)
+        self.assertEqual(
+            [(key, name) for key, name, _ in plan.jobs],
+            [(("volume", "a"), "a"), (("volume", "b"), "b")],
+        )
+
+    def test_jobs_remove_exactly_those_volumes(self) -> None:
+        docker = _docker()
+        plan = plan_orphan_prune(docker, self._volumes()[:2], {})
+        assert isinstance(plan, OrphanPrunePlan)
+        result = run_bulk(plan.jobs)
+        self.assertEqual(result.ok_count, 2)
+        self.assertEqual(
+            [c.args for c in docker.remove_volume.call_args_list], [("a",), ("b",)]
+        )
+
+    def test_a_volume_mounted_since_is_skipped_not_removed(self) -> None:
+        docker = _docker()
+        plan = plan_orphan_prune(docker, self._volumes(), {})
+        assert isinstance(plan, OrphanPrunePlan)
+        self.assertEqual([name for _, name, _ in plan.jobs], ["a", "b"])
+        run_bulk(plan.jobs)
+        removed = [c.args[0] for c in docker.remove_volume.call_args_list]
+        self.assertNotIn("busy", removed)
+
+    def test_confirm_message_has_the_count_and_complete_size(self) -> None:
+        plan = plan_orphan_prune(_docker(), self._volumes()[:2], {"a": 1024, "b": 3072})
+        assert isinstance(plan, OrphanPrunePlan)
+        self.assertEqual(
+            plan.confirm_message,
+            "Delete 2 orphaned volume(s) (4.00KB)? Their data is removed for good.",
+        )
+
+    def test_confirm_message_marks_a_partial_size_and_drops_an_unknown_one(
+        self,
+    ) -> None:
+        partial = plan_orphan_prune(_docker(), self._volumes()[:2], {"a": 1024})
+        unknown = plan_orphan_prune(_docker(), self._volumes()[:2], {})
+        assert isinstance(partial, OrphanPrunePlan)
+        assert isinstance(unknown, OrphanPrunePlan)
+        self.assertIn("(≥ 1.00KB)", partial.confirm_message)
+        self.assertEqual(
+            unknown.confirm_message,
+            "Delete 2 orphaned volume(s)? Their data is removed for good.",
+        )
+
+    def test_nothing_to_prune_is_a_refusal(self) -> None:
+        self.assertEqual(
+            plan_orphan_prune(_docker(), [], {}),
+            Refusal("No orphaned volumes to prune"),
+        )
+        self.assertIsInstance(
+            plan_orphan_prune(_docker(), [self._volumes()[2]], {}), Refusal
+        )
+
+    def test_does_not_use_the_sdk_prune(self) -> None:
+        docker = _docker()
+        plan = plan_orphan_prune(docker, self._volumes()[:2], {})
+        assert isinstance(plan, OrphanPrunePlan)
+        run_bulk(plan.jobs)
+        docker.prune_volumes.assert_not_called()

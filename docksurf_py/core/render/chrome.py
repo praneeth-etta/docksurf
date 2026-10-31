@@ -218,9 +218,12 @@ def key_hints(ctx: HintContext) -> list[Hint]:
     elif ctx.tab == TabID.VOLUMES:
         if ctx.row == "volume" and ctx.related:
             hints.append(_JUMP)
-        hints += [("+", "new"), ("b", "size all")]
+        hints += [("b", "size"), ("+", "new")]
         if ctx.row == "volume":
             hints += [_MARK, _DELETE]
+        elif ctx.row == "volume_group":
+            hints.append(("space", "collapse"))
+        hints.append(("P", "prune"))
     elif ctx.tab == TabID.NETWORKS:
         if ctx.row == "network" and ctx.related:
             hints.append(_JUMP)
@@ -323,15 +326,17 @@ def list_title(
     tab: TabID,
     count: int,
     sort_state: tuple[str, bool] | None,
-    grouped: bool,
+    grouped: bool | str,
     total: int | None = None,
 ) -> str:
     """`containers · 15 · grouped by project`, `images · 58 · sorted by size ▾`.
-    `total` is the unfiltered count; when it differs, shows `3 of 15`."""
+    `grouped` is True for Compose projects or what the rows are grouped by
+    (`usage`). `total` is the unfiltered count; when it differs, shows
+    `3 of 15`."""
     shown = f"{count} of {total}" if total is not None and total != count else count
     parts = [_PLURALS[tab], str(shown)]
     if grouped:
-        parts.append("grouped by project")
+        parts.append(f"grouped by {'project' if grouped is True else grouped}")
     if sort_state is not None:
         column, reverse = sort_state
         parts.append(f"sorted by {column.lower()} {'▾' if reverse else '▴'}")

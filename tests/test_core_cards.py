@@ -3,6 +3,7 @@
 import unittest
 
 from rich.console import Console, RenderableType
+from rich.text import Text
 
 from docksurf_py.core.models import (
     ComposeProject,
@@ -12,6 +13,7 @@ from docksurf_py.core.models import (
     Image,
     ImagePlatform,
     PortBinding,
+    Volume,
 )
 from docksurf_py.core.render.cards import (
     CardModel,
@@ -19,6 +21,7 @@ from docksurf_py.core.render.cards import (
     image_card,
     project_card,
     section_rule,
+    volume_card,
 )
 from docksurf_py.core.render.palette import TIDE_PALETTE as P
 from tests.test_compose import make_container
@@ -316,3 +319,89 @@ class ImageCardTests(unittest.TestCase):
         self.assertEqual(card.key, self._card().key)
         other = self._card(_image(tag="1.0"))
         self.assertNotEqual(card.key, other.key)  # per tag row
+
+
+HASH = "5c1339b0" + "a" * 42 + "d68cc6" + "e" * 8  # 64 hex characters
+
+
+def _volume(name: str = "pgdata", used_by=None, labels=None) -> Volume:
+    return Volume(
+        name=name,
+        driver="local",
+        mountpoint=f"/var/lib/docker/volumes/{name}/_data",
+        used_by=list(used_by or []),
+        labels=dict(labels or {}),
+    )
+
+
+class VolumeCardTests(unittest.TestCase):
+    def test_named_orphan_card(self) -> None:
+        card = volume_card(_volume("pgdata"), 184_000_000, [], P)
+        text = _plain(card.body)
+        self.assertEqual(Text.from_markup(card.title).plain, "pgdata · volume")
+        self.assertIn("ORPHANED", text)
+        self.assertNotIn("anonymous", text)
+        self.assertIn("driver local", text)
+        self.assertIn("nothing", text)
+        self.assertIn("Y copy", text)
+        self.assertIn("/var/lib/docker/volumes/pgdata/_data", text)
+
+    def test_the_mountpoint_label_is_not_cut_short(self) -> None:
+        self.assertIn("mountpoint", _plain(volume_card(_volume(), None, [], P).body))
+
+    def test_anonymous_title_keeps_both_ends_of_the_hash(self) -> None:
+        card = volume_card(_volume(HASH), None, [], P)
+        self.assertEqual(
+            Text.from_markup(card.title).plain, f"◇ {HASH[:8]}…{HASH[-6:]} · volume"
+        )
+        self.assertIn("anonymous", _plain(card.body))
+
+    def test_the_full_name_is_shown_wrapped_in_the_body(self) -> None:
+        text = _plain(volume_card(_volume(HASH), None, [], P).body, width=40)
+        self.assertGreater(len(text.splitlines()), 8)  # it wrapped
+        self.assertIn(HASH, "".join(text.split()))
+
+    def test_size_is_pending_until_known(self) -> None:
+        self.assertIn("· · ·", _plain(volume_card(_volume(), None, [], P).body))
+        self.assertNotIn("· · ·", _plain(volume_card(_volume(), 2048, [], P).body))
+        self.assertIn("2.00KB", _plain(volume_card(_volume(), 2048, [], P).body))
+
+    def test_in_use_card_lists_the_containers_with_a_jump_hint(self) -> None:
+        web = make_container("web", project="shop", service="web")
+        db = make_container("db")
+        card = volume_card(_volume(used_by=["web", "db"]), None, [web, db], P)
+        text = _plain(card.body)
+        self.assertIn("IN USE", text)
+        self.assertNotIn("ORPHANED", text)
+        self.assertIn("web", text)
+        self.assertIn("db", text)
+        self.assertEqual(text.count("jump"), 1)
+        self.assertNotIn("nothing", text)
+
+    def test_names_are_used_when_the_containers_are_not_in_the_snapshot(self) -> None:
+        card = volume_card(_volume(used_by=["ghost"]), None, [], P)
+        self.assertIn("ghost", _plain(card.body))
+
+    def test_labels_are_chips_and_none_is_faint(self) -> None:
+        card = volume_card(_volume(labels={"env": "dev", "tier": "db"}), None, [], P)
+        text = _plain(card.body)
+        self.assertIn("env=dev", text)
+        self.assertIn("tier=db", text)
+        self.assertIn("none", _plain(volume_card(_volume(), None, [], P).body))
+
+    def test_many_labels_are_capped_with_a_count(self) -> None:
+        labels = {f"k{i}": "v" for i in range(11)}
+        text = _plain(volume_card(_volume(labels=labels), None, [], P).body, width=200)
+        self.assertIn("k7=v", text)
+        self.assertNotIn("k8=v", text)
+        self.assertIn("+3 more", text)
+
+    def test_markup_in_names_and_labels_is_escaped(self) -> None:
+        card = volume_card(_volume("[red]x", labels={"[b]": "[/]"}), None, [], P)
+        self.assertEqual(Text.from_markup(card.title).plain, "[red]x · volume")
+        self.assertIn("[b]=[/]", _plain(card.body))
+
+    def test_key_is_per_volume_so_a_refresh_keeps_the_card(self) -> None:
+        a = volume_card(_volume("a"), None, [], P)
+        self.assertEqual(a.key, volume_card(_volume("a"), 5, [], P).key)
+        self.assertNotEqual(a.key, volume_card(_volume("b"), None, [], P).key)

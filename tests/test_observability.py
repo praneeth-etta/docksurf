@@ -16,7 +16,8 @@ from docksurf_py.core.models import (
     DockerSnapshot,
     SystemDf,
 )
-from docksurf_py.core.render.observability import render_df, render_top
+from docksurf_py.core.render.observability import render_df, render_df_bars, render_top
+from docksurf_py.core.render.palette import TIDE_PALETTE
 from docksurf_py.core.state.refresh import is_noise_event
 from docksurf_py.tui.app import DockSurfApp
 from docksurf_py.tui.widgets import SystemDfScreen
@@ -477,3 +478,92 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+GB = 1024**3
+
+
+def _df(*entries: DiskUsageEntry) -> SystemDf:
+    return SystemDf(
+        entries=list(entries),
+        total_size=sum(e.size_bytes for e in entries),
+        total_reclaimable=sum(e.reclaimable_bytes for e in entries),
+    )
+
+
+def _bars(df: SystemDf, width: int = 80) -> list[str]:
+    from rich.console import Console
+
+    console = Console(width=width, no_color=True, highlight=False)
+    with console.capture() as cap:
+        console.print(render_df_bars(df, TIDE_PALETTE, width))
+    return [line.rstrip() for line in cap.get().splitlines()]
+
+
+class RenderDfBarsTests(unittest.TestCase):
+    ENTRIES = (
+        DiskUsageEntry("Containers", 4, 2, 1 * GB, 0),
+        DiskUsageEntry("Local Volumes", 29, 8, 5 * GB, 4 * GB),
+        DiskUsageEntry("Build Cache", 10, 0, 10 * GB, 8 * GB),
+        DiskUsageEntry("Images", 58, 20, 20 * GB, 12 * GB),
+    )
+
+    def test_rows_in_the_designed_order_with_sizes_and_reclaimable(self) -> None:
+        lines = _bars(_df(*self.ENTRIES))
+        self.assertEqual(
+            [line.split()[0] for line in lines],
+            ["images", "build", "volumes", "containers"],
+        )
+        self.assertTrue(lines[0].endswith("20.00GB · 12.00GB free-able"))
+        self.assertTrue(lines[3].endswith("1.00GB · 0B free-able"))
+
+    def test_bars_share_one_scale(self) -> None:
+        lines = _bars(_df(*self.ENTRIES))
+        cells = [
+            line.count("━") for line in lines
+        ]  # images, cache, volumes, containers
+        self.assertEqual(cells[0], max(cells))
+        self.assertAlmostEqual(cells[1] / cells[0], 0.5, delta=0.05)
+        self.assertAlmostEqual(cells[2] / cells[0], 0.25, delta=0.05)
+        self.assertGreaterEqual(cells[3], 1)
+
+    def test_rows_fit_the_width(self) -> None:
+        for width in (40, 60, 80):
+            for line in _bars(_df(*self.ENTRIES), width):
+                self.assertLessEqual(len(line), width + 12, width)
+
+    def test_missing_categories_are_skipped_and_unknown_ones_ignored(self) -> None:
+        df = _df(
+            DiskUsageEntry("Images", 1, 1, 100, 0), DiskUsageEntry("Other", 1, 1, 5, 0)
+        )
+        lines = _bars(df)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("images"))
+
+    def test_a_zero_size_category_has_an_empty_bar(self) -> None:
+        lines = _bars(
+            _df(
+                DiskUsageEntry("Images", 1, 1, 100, 0),
+                DiskUsageEntry("Containers", 0, 0, 0, 0),
+            )
+        )
+        self.assertEqual(lines[1].count("━"), 0)
+        self.assertIn("0B · 0B free-able", lines[1])
+
+    def test_reclaimable_part_uses_the_warning_colour(self) -> None:
+        bar = render_df_bars(
+            _df(DiskUsageEntry("Images", 1, 0, 100, 100)), TIDE_PALETTE, 60
+        )
+        from rich.console import Console
+
+        console = Console(width=60, force_terminal=True, color_system="truecolor")
+        with console.capture() as cap:
+            console.print(bar)
+        warning = TIDE_PALETTE.warning.lstrip("#")
+        rgb = ";".join(str(int(warning[i : i + 2], 16)) for i in (0, 2, 4))
+        self.assertIn(rgb, cap.get())
+
+    def test_no_known_category_gives_a_message(self) -> None:
+        self.assertEqual(
+            _bars(_df(DiskUsageEntry("Other", 1, 1, 5, 0))), ["no disk usage data"]
+        )

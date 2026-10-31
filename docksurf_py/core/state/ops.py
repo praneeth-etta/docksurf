@@ -7,7 +7,7 @@ Messages are Rich markup with user-supplied names already escaped.
 
 import shlex
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Iterable, Literal, Mapping
 
 from rich.markup import escape
 
@@ -18,6 +18,7 @@ from docksurf_py.core.models import (
     Network,
     Volume,
 )
+from docksurf_py.core.render.volumes import orphan_summary, orphan_total_text
 from docksurf_py.core.service import DockerService
 
 EXEC_SHELL_CANDIDATES = ("bash", "sh")
@@ -95,6 +96,41 @@ def plan_volume_delete(docker: DockerService, vol: Volume) -> DeletePlan | Refus
         confirm_message=f"Remove volume '{escape(vol.name)}'?",
         command=lambda force: docker.remove_volume(vol.name),
         success_message=f"Removed volume {escape(vol.name)}",
+    )
+
+
+@dataclass(frozen=True)
+class OrphanPrunePlan:
+    """Removing a set of orphaned volumes: one delete job per volume (built
+    from `plan_volume_delete`) and the confirm text naming the count and size."""
+
+    jobs: list["BulkJob"]
+    confirm_message: str
+
+
+def plan_orphan_prune(
+    docker: DockerService, volumes: Iterable[Volume], sizes: Mapping[str, int]
+) -> OrphanPrunePlan | Refusal:
+    """Plan deleting exactly `volumes` (the orphans on screen), skipping any a
+    container has meanwhile mounted. Used instead of `sdk.volumes.prune()`,
+    which on Docker 23+ only removes anonymous volumes and so would leave the
+    named orphans the user was told would go."""
+    jobs: list[BulkJob] = []
+    planned: list[Volume] = []
+    for v in volumes:
+        plan = plan_volume_delete(docker, v)
+        if isinstance(plan, Refusal):
+            continue
+        # Same identity as `tables.row_key` (which imports this module).
+        jobs.append((("volume", v.name), v.name, bind_delete_command(plan, False)))
+        planned.append(v)
+    if not jobs:
+        return Refusal("No orphaned volumes to prune")
+    total = orphan_total_text(orphan_summary(planned, sizes))
+    size = f" ({total})" if total else ""
+    return OrphanPrunePlan(
+        jobs,
+        f"Delete {len(jobs)} orphaned volume(s){size}? Their data is removed for good.",
     )
 
 

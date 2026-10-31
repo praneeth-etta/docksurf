@@ -100,6 +100,50 @@ def render_live(history: StatsHistory, p: Palette, width: int) -> RenderableType
     return grid
 
 
+_DF_ROWS = (
+    ("Images", "images"),
+    ("Build Cache", "build cache"),
+    ("Local Volumes", "volumes"),
+    ("Containers", "containers"),
+)
+_DF_LABEL_WIDTH = 14
+_DF_BAR_MIN = 4
+
+
+def render_df_bars(df: SystemDf, p: Palette, width: int) -> RenderableType:
+    """The volumes tab's disk panel: one row per `docker system df` category
+    (label, a bar, `62.4 GB · 41.8 GB free-able`). The bars share one scale,
+    the largest category filling the column; the reclaimable part of each is
+    drawn in `warning`. `width` is the panel's inner width in cells."""
+    by_kind = {e.kind: e for e in df.entries}
+    rows = [(label, by_kind[kind]) for kind, label in _DF_ROWS if kind in by_kind]
+    if not rows:
+        return Text.from_markup(fg(p, "muted", "no disk usage data"))
+    values = [
+        f"{format_size(e.size_bytes)} · {format_size(e.reclaimable_bytes)} free-able"
+        for _, e in rows
+    ]
+    value_width = max(len(v) for v in values)
+    bar_width = max(width - _DF_LABEL_WIDTH - value_width - 2, _DF_BAR_MIN)
+    largest = max(e.size_bytes for _, e in rows)
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style=p.muted, no_wrap=True, width=_DF_LABEL_WIDTH)
+    grid.add_column(no_wrap=True, width=bar_width)
+    grid.add_column(no_wrap=True, justify="right", width=value_width)
+    for (label, e), value in zip(rows, values):
+        cells = 0
+        if e.size_bytes > 0 and largest > 0:
+            cells = max(1, round(e.size_bytes / largest * bar_width))
+        reclaimable = min(e.reclaimable_bytes, e.size_bytes)
+        bar = split_bar(e.size_bytes - reclaimable, reclaimable, cells, p)
+        grid.add_row(
+            label,
+            Text.from_markup(bar),
+            Text.from_markup(fg(p, "foreground", value)),
+        )
+    return grid
+
+
 def render_top(top: ContainerTop, name: str) -> Panel:
     """Build the running-processes renderable for the detail pane.
 

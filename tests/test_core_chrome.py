@@ -179,7 +179,32 @@ class KeyHintsTests(unittest.TestCase):
 
     def test_empty_tab_still_offers_create(self) -> None:
         self.assertEqual(self.keys(tab=TabID.IMAGES, row="none"), ["+", "P"])
-        self.assertEqual(self.keys(tab=TabID.VOLUMES, row="none"), ["+", "b"])
+        self.assertEqual(self.keys(tab=TabID.VOLUMES, row="none"), ["b", "+", "P"])
+
+    def test_volume_row_hints_follow_the_design(self) -> None:
+        self.assertEqual(
+            key_hints(HintContext(TabID.VOLUMES, "volume")),
+            [
+                ("b", "size"),
+                ("+", "new"),
+                ("space", "mark"),
+                ("d", "delete"),
+                ("P", "prune"),
+            ],
+        )
+
+    def test_volume_in_use_adds_the_jump_hint_first(self) -> None:
+        hints = key_hints(HintContext(TabID.VOLUMES, "volume", related=True))
+        self.assertEqual([k for k, _ in hints], ["⏎", "b", "+", "space", "d", "P"])
+
+    def test_volume_group_header_collapses_and_cannot_be_marked_or_deleted(
+        self,
+    ) -> None:
+        hints = key_hints(HintContext(TabID.VOLUMES, "volume_group"))
+        self.assertEqual(
+            hints,
+            [("b", "size"), ("+", "new"), ("space", "collapse"), ("P", "prune")],
+        )
 
     def test_image_row_hints_follow_the_design(self) -> None:
         self.assertEqual(
@@ -316,6 +341,16 @@ class ListTitleTests(unittest.TestCase):
         self.assertEqual(
             list_title(TabID.CONTAINERS, 15, None, grouped=True),
             "containers · 15 · grouped by project",
+        )
+
+    def test_grouped_by_a_named_key(self) -> None:
+        self.assertEqual(
+            list_title(TabID.VOLUMES, 29, None, grouped="usage"),
+            "volumes · 29 · grouped by usage",
+        )
+        self.assertEqual(
+            list_title(TabID.VOLUMES, 29, ("Size", True), grouped="usage"),
+            "volumes · 29 · grouped by usage · sorted by size ▾",
         )
 
     def test_sorted_images(self) -> None:

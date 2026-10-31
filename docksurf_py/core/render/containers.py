@@ -178,6 +178,6 @@ def project_row_cells(project: ComposeProject, p: Palette) -> tuple[SafeMarkup, 
     )
 
 
-def chevron(collapsed: bool, p: Palette) -> SafeMarkup:
-    """Gutter glyph for a project header row."""
-    return fg(p, "muted", "▸" if collapsed else "▾")
+def chevron(collapsed: bool, p: Palette, role: str = "muted") -> SafeMarkup:
+    """Gutter glyph for a project or group header row, in `role`'s colour."""
+    return fg(p, role, "▸" if collapsed else "▾")

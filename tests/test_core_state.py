@@ -18,7 +18,10 @@ from docksurf_py.core.state.logs import LogBuffer, line_matches, write_log_expor
 from docksurf_py.core.state.ops import DeletePlan, bind_delete_command
 from docksurf_py.core.state.tables import (
     CONTAINER_CHIPS,
+    Chip,
+    GroupSpec,
     ResourceKind,
+    RowGroup,
     TablesState,
     matches_container,
     matches_image,
@@ -632,3 +635,211 @@ class RevealTests(unittest.TestCase):
         state.request_focus(("container", "web"))
         self.assertEqual(state.take_pending_focus(), ("container", "web"))
         self.assertIsNone(state.take_pending_focus())
+
+
+def _group_kinds() -> dict[TabID, ResourceKind]:
+    """A volumes kind with IN USE / ORPHANED groups; named before `anon-*`."""
+    return {
+        TabID.VOLUMES: ResourceKind(
+            label="volume",
+            snapshot_items=lambda snap: snap.volumes,
+            matches=matches_volume,
+            sort_keys={"Name": lambda v: v.name.lower()},
+            groups=(
+                GroupSpec(
+                    "in_use",
+                    "IN USE",
+                    "success",
+                    "",
+                    lambda v, snap: bool(v.used_by),
+                ),
+                GroupSpec(
+                    "orphaned",
+                    "ORPHANED",
+                    "warning",
+                    "not mounted by any container",
+                    lambda v, snap: True,
+                    order_key=lambda v: (v.name.startswith("anon-"), v.name),
+                ),
+            ),
+        )
+    }
+
+
+def _vol_snap(*volumes: Volume) -> DockerSnapshot:
+    return DockerSnapshot([], [], list(volumes), [])
+
+
+def _used(name: str) -> Volume:
+    v = _volume(name)
+    v.used_by = ["web"]
+    return v
+
+
+def _row_labels(rows) -> list[str]:
+    return [f"[{r.label}]" if isinstance(r, RowGroup) else r.name for r in rows]
+
+
+class RowGroupTests(unittest.TestCase):
+    def test_row_key_is_namespaced_by_tab_and_group(self) -> None:
+        group = RowGroup(TabID.VOLUMES, "orphaned", "ORPHANED")
+        self.assertEqual(row_key(group), ("group", "tab-volumes:orphaned"))
+        self.assertNotEqual(
+            row_key(group), row_key(RowGroup(TabID.NETWORKS, "orphaned", "X"))
+        )
+
+    def test_row_key_ignores_label_and_items(self) -> None:
+        a = RowGroup(TabID.VOLUMES, "orphaned", "ORPHANED", items=(_volume("a"),))
+        b = RowGroup(TabID.VOLUMES, "orphaned", "ORPHANED (3)")
+        self.assertEqual(row_key(a), row_key(b))
+
+    def test_groups_are_emitted_in_spec_order_with_their_items(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("loose"), _used("db"))
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(_row_labels(rows), ["[IN USE]", "db", "[ORPHANED]", "loose"])
+
+    def test_group_header_carries_spec_fields_and_all_its_items(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("a"), _volume("b"))
+        header = tables.build_rows(TabID.VOLUMES, snap)[0]
+        self.assertIsInstance(header, RowGroup)
+        self.assertEqual(
+            (header.tab, header.key, header.role, header.note),
+            (TabID.VOLUMES, "orphaned", "warning", "not mounted by any container"),
+        )
+        self.assertEqual([v.name for v in header.items], ["a", "b"])
+
+    def test_first_matching_spec_wins(self) -> None:
+        # `orphaned` matches everything, but `in_use` is listed first.
+        tables = TablesState(_group_kinds())
+        rows = tables.build_rows(TabID.VOLUMES, _vol_snap(_used("db")))
+        self.assertEqual(_row_labels(rows), ["[IN USE]", "db"])
+
+    def test_empty_groups_are_skipped(self) -> None:
+        tables = TablesState(_group_kinds())
+        rows = tables.build_rows(TabID.VOLUMES, _vol_snap(_volume("a")))
+        self.assertEqual(_row_labels(rows), ["[ORPHANED]", "a"])
+
+    def test_an_item_no_spec_claims_is_kept_after_the_groups(self) -> None:
+        kinds = _group_kinds()
+        only_used = kinds[TabID.VOLUMES].groups[:1]
+        kinds[TabID.VOLUMES] = ResourceKind(
+            label="volume",
+            snapshot_items=lambda snap: snap.volumes,
+            matches=matches_volume,
+            groups=only_used,
+        )
+        tables = TablesState(kinds)
+        rows = tables.build_rows(TabID.VOLUMES, _vol_snap(_volume("x"), _used("db")))
+        self.assertEqual(_row_labels(rows), ["[IN USE]", "db", "x"])
+
+    def test_collapsing_hides_items_but_keeps_the_header(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("a"), _used("db"))
+        self.assertTrue(tables.toggle_group_collapse(TabID.VOLUMES, "orphaned"))
+        self.assertTrue(tables.is_group_collapsed(TabID.VOLUMES, "orphaned"))
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(_row_labels(rows), ["[IN USE]", "db", "[ORPHANED]"])
+        # The header still reports what it holds, for its count and totals.
+        self.assertEqual([v.name for v in rows[-1].items], ["a"])
+
+    def test_expanding_restores_the_items(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("a"))
+        tables.toggle_group_collapse(TabID.VOLUMES, "orphaned")
+        self.assertFalse(tables.toggle_group_collapse(TabID.VOLUMES, "orphaned"))
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(_row_labels(rows), ["[ORPHANED]", "a"])
+
+    def test_collapse_is_per_tab_and_per_group(self) -> None:
+        tables = TablesState(_group_kinds())
+        tables.toggle_group_collapse(TabID.VOLUMES, "orphaned")
+        self.assertFalse(tables.is_group_collapsed(TabID.VOLUMES, "in_use"))
+        self.assertFalse(tables.is_group_collapsed(TabID.NETWORKS, "orphaned"))
+
+    def test_collapsing_a_group_does_not_touch_compose_collapse(self) -> None:
+        tables = TablesState(_group_kinds())
+        tables.toggle_group_collapse(TabID.VOLUMES, "orphaned")
+        self.assertEqual(tables.collapsed_projects, set())
+
+    def test_query_runs_before_grouping_so_headers_follow_matches(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("cache"), _used("db"), _volume("tmp"))
+        rows = tables.build_rows(TabID.VOLUMES, snap, query="DB")
+        self.assertEqual(_row_labels(rows), ["[IN USE]", "db"])
+
+    def test_chip_and_groups_compose(self) -> None:
+        kinds = _group_kinds()
+        k = kinds[TabID.VOLUMES]
+        kinds[TabID.VOLUMES] = ResourceKind(
+            label=k.label,
+            snapshot_items=k.snapshot_items,
+            matches=k.matches,
+            sort_keys=k.sort_keys,
+            groups=k.groups,
+            chips=(Chip("named", "named", lambda v: not v.name.startswith("anon-")),),
+        )
+        tables = TablesState(kinds)
+        snap = _vol_snap(_volume("anon-1"), _volume("keep"), _used("db"))
+        tables.set_chip(TabID.VOLUMES, "named")
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(_row_labels(rows), ["[IN USE]", "db", "[ORPHANED]", "keep"])
+
+    def test_group_order_key_puts_named_before_anonymous(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("anon-2"), _volume("zeta"), _volume("alpha"))
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(_row_labels(rows), ["[ORPHANED]", "alpha", "zeta", "anon-2"])
+
+    def test_column_sort_orders_within_each_group_and_overrides_order_key(
+        self,
+    ) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(
+            _volume("b"), _volume("anon-1"), _used("z"), _used("y"), _volume("a")
+        )
+        tables.cycle_sort(TabID.VOLUMES, "Name")
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(
+            _row_labels(rows),
+            ["[IN USE]", "y", "z", "[ORPHANED]", "a", "anon-1", "b"],
+        )
+        tables.cycle_sort(TabID.VOLUMES, "Name")  # descending
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        self.assertEqual(
+            _row_labels(rows),
+            ["[IN USE]", "z", "y", "[ORPHANED]", "b", "anon-1", "a"],
+        )
+
+    def test_index_of_finds_a_group_header_by_key(self) -> None:
+        tables = TablesState(_group_kinds())
+        tables.build_rows(TabID.VOLUMES, _vol_snap(_used("db"), _volume("a")))
+        key = ("group", "tab-volumes:orphaned")
+        self.assertEqual(tables.index_of(TabID.VOLUMES, key), 2)
+
+    def test_marks_never_include_groups(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("a"), _used("db"))
+        rows = tables.build_rows(TabID.VOLUMES, snap)
+        tables.mark(TabID.VOLUMES, [row_key(r) for r in rows if row_key(r)])
+        tables.apply_snapshot(snap, TabID.VOLUMES)
+        self.assertEqual(
+            sorted(v.name for v in tables.marked_items(TabID.VOLUMES, snap)),
+            ["a", "db"],
+        )
+
+    def test_apply_snapshot_prunes_vanished_items_and_drops_group_marks(self) -> None:
+        tables = TablesState(_group_kinds())
+        snap = _vol_snap(_volume("a"))
+        tables.mark(
+            TabID.VOLUMES,
+            [("volume", "a"), ("volume", "gone"), ("group", "tab-volumes:orphaned")],
+        )
+        tables.apply_snapshot(snap, TabID.VOLUMES)
+        self.assertEqual(tables.marked[TabID.VOLUMES], {("volume", "a")})
+
+    def test_a_kind_without_groups_stays_flat(self) -> None:
+        tables = TablesState(_kinds())
+        rows = tables.build_rows(TabID.IMAGES, _snap(images=[_image("a", "1")]))
+        self.assertFalse(any(isinstance(r, RowGroup) for r in rows))

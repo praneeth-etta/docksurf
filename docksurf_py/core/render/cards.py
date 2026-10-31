@@ -25,12 +25,14 @@ from docksurf_py.core.models import (
     ContainerTop,
     Image,
     ImagePlatform,
+    Volume,
 )
 from docksurf_py.core.render.containers import compact_age
 from docksurf_py.core.render.images import image_status, status_glyph
 from docksurf_py.core.render.markup import format_health_log, state_cell, state_glyph
 from docksurf_py.core.render.observability import render_top
 from docksurf_py.core.render.palette import Palette, fg, key_chip, pill
+from docksurf_py.core.render.volumes import ANON_GLYPH, is_anonymous
 from docksurf_py.core.state.status import ROLE, classify, project_state_counts
 from docksurf_py.core.types import SafeMarkup
 
@@ -67,13 +69,20 @@ def section_rule(label: str, p: Palette) -> Rule:
     return Rule(Text(label, style=p.muted), align="left", characters="─", style=p.faint)
 
 
-def _kv(p: Palette, rows: list[tuple[str, str]]) -> Table:
-    """Label/value grid; values are Rich markup (already escaped)."""
+def _kv(
+    p: Palette,
+    rows: Sequence[tuple[str, str | RenderableType]],
+    label_width: int = _LABEL_WIDTH,
+) -> Table:
+    """Label/value grid; a string value is Rich markup (already escaped), any
+    other value a renderable."""
     grid = Table.grid(padding=(0, 1), expand=True)
-    grid.add_column(style=p.muted, no_wrap=True, width=_LABEL_WIDTH)
+    grid.add_column(style=p.muted, no_wrap=True, width=label_width)
     grid.add_column(ratio=1, overflow="fold")
     for label, value in rows:
-        grid.add_row(label, Text.from_markup(value))
+        grid.add_row(
+            label, Text.from_markup(value) if isinstance(value, str) else value
+        )
     return grid
 
 
@@ -395,5 +404,75 @@ def image_card(
             Text(""),
             section_rule("USED BY", p),
             *used_by,
+        ),
+    )
+
+
+# --- Volume card ---------------------------------------------------------------
+
+_VOLUME_LABEL_WIDTH = 10
+# Longest hash-name prefix/suffix shown in a volume card title.
+_TITLE_HEAD = 8
+_TITLE_TAIL = 6
+_LABELS_SHOWN = 8
+
+
+def _volume_title(v: Volume, p: Palette) -> SafeMarkup:
+    if not is_anonymous(v):
+        return SafeMarkup(f"{escape(v.name)} · volume")
+    name = v.name
+    if len(name) > _TITLE_HEAD + _TITLE_TAIL + 1:
+        name = f"{name[:_TITLE_HEAD]}…{name[-_TITLE_TAIL:]}"
+    return SafeMarkup(f"{fg(p, 'secondary', ANON_GLYPH)} {escape(name)} · volume")
+
+
+def _volume_label_chips(v: Volume, p: Palette) -> str:
+    if not v.labels:
+        return fg(p, "faint", "none")
+    shown = [
+        key_chip(p, f"{k}={val}") for k, val in list(v.labels.items())[:_LABELS_SHOWN]
+    ]
+    hidden = len(v.labels) - len(shown)
+    if hidden > 0:
+        shown.append(fg(p, "muted", f"+{hidden} more   i inspect"))
+    return " ".join(shown)
+
+
+def volume_card(
+    v: Volume, size: int | None, containers: Sequence[Container], p: Palette
+) -> CardModel:
+    """The volume detail card. `size` is None until `b` has computed it;
+    `containers` are the ones mounting the volume (see `related_containers`)."""
+    in_use = bool(v.used_by)
+    chips = [
+        pill(p, "IN USE" if in_use else "ORPHANED", "success" if in_use else "warning")
+    ]
+    if is_anonymous(v):
+        chips.append(pill(p, "anonymous", "secondary"))
+    facts = [
+        fg(p, "muted", format_size(size) if size is not None else "· · ·"),
+        fg(p, "muted", f"driver {v.driver}"),
+    ]
+    used_by: RenderableType
+    if containers:
+        used_by = Group(*_image_used_by_rows(containers, p))
+    elif v.used_by:
+        used_by = Text.from_markup(fg(p, "muted", ", ".join(v.used_by)))
+    else:
+        used_by = Text.from_markup(fg(p, "muted", "nothing"))
+    rows: list[tuple[str, str | RenderableType]] = [
+        ("name", f"{escape(v.name)}   {fg(p, 'muted', 'Y copy')}"),
+        ("mountpoint", fg(p, "muted", escape(v.mountpoint))),
+        ("labels", _volume_label_chips(v, p)),
+        ("used by", used_by),
+    ]
+    return CardModel(
+        key=f"volume:{v.name}",
+        title=_volume_title(v, p),
+        subtitle="",
+        body=Group(
+            _facts_line(p, " ".join(chips), facts),
+            Text(""),
+            _kv(p, rows, _VOLUME_LABEL_WIDTH),
         ),
     )
