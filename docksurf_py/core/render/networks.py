@@ -112,8 +112,12 @@ def networks_footer(p: Palette) -> SafeMarkup:
 
 # --- Side panels ---------------------------------------------------------------
 
-# Narrower than this and the MAC column is dropped from the endpoints table.
-_MAC_MIN_WIDTH = 46
+# Narrower than these and the ALSO ON / MAC columns are dropped from the
+# endpoints table (MAC goes first: which other networks a container bridges is
+# the more useful of the two).
+_ALSO_ON_MIN_WIDTH = 44
+_MAC_MIN_WIDTH = 64
+_ALSO_ON_WIDTH = 16
 
 
 def topology_title(count: int) -> str:
@@ -149,19 +153,25 @@ def endpoint_window(
 def endpoints_body(
     members: list[_Member], p: Palette, width: int, height: int
 ) -> RenderableType:
-    """The endpoints table: state glyph, CONTAINER, IPV4, MAC (running first;
-    MAC dropped when `width` is short)."""
+    """The endpoints table: state glyph, CONTAINER, IPV4, ALSO ON (the other
+    networks the container is on), MAC (running first; MAC then ALSO ON are
+    dropped as `width` gets short)."""
     if not members:
         return Text("no containers attached", style=p.muted)
     shown, hidden, kind = endpoint_window(members, height)
+    with_also = width >= _ALSO_ON_MIN_WIDTH
     with_mac = width >= _MAC_MIN_WIDTH
     grid = Table.grid(padding=(0, 1), expand=True)
     grid.add_column(width=1)
     grid.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
     grid.add_column(width=15, no_wrap=True)
+    if with_also:
+        grid.add_column(width=_ALSO_ON_WIDTH, no_wrap=True, overflow="ellipsis")
     if with_mac:
         grid.add_column(width=17, no_wrap=True)
     head = [Text(""), Text("CONTAINER", style=p.muted), Text("IPV4", style=p.muted)]
+    if with_also:
+        head.append(Text("ALSO ON", style=p.muted))
     if with_mac:
         head.append(Text("MAC", style=p.muted))
     grid.add_row(*head)
@@ -173,10 +183,18 @@ def endpoints_body(
             Text(m.name, style=p.strong if m.running else p.muted),
             Text(ip, style=p.muted if ip == "—" else p.foreground),
         ]
+        if with_also:
+            also = ", ".join(m.other_networks)
+            cells.append(
+                Text(f"⇄ {also}", style=p.secondary)
+                if also
+                else Text("—", style=p.muted)
+            )
         if with_mac:
             cells.append(Text(m.mac or "—", style=p.muted))
         grid.add_row(*cells)
     if hidden:
         note = Text(f"+ {hidden} {kind}", style=p.muted)
-        grid.add_row(*[Text(""), note, *[Text("")] * (3 if with_mac else 2)])
+        extra = 1 + with_also + with_mac
+        grid.add_row(*[Text(""), note, *[Text("")] * extra])
     return grid

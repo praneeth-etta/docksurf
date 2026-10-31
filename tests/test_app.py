@@ -2278,6 +2278,29 @@ class NetworkActionTests(unittest.IsolatedAsyncioTestCase):
                 lambda: ("disconnect_container", "net1", "web") in svc.calls
             )
 
+    async def test_disconnect_offers_stopped_containers_the_panel_lists(self) -> None:
+        db = make_container("db", running=False)
+        db.networks = ["net1"]
+        net = _network(endpoints=[])  # Docker lists running containers only
+        svc = MockDockerService(lambda: DockerSnapshot([db], [], [], [net]))
+        app = DockSurfApp(docker=svc)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await self._on_networks(app, pilot)
+            app.action_network_disconnect()
+            await wait_until(
+                lambda: any(
+                    isinstance(s, ContainerPickerScreen) for s in app.screen_stack
+                )
+            )
+            picker = app.screen_stack[-1]
+            assert isinstance(picker, ContainerPickerScreen)
+            self.assertEqual([cid for cid, _ in picker._options], ["db"])
+            picker.dismiss("db")
+            await wait_until(
+                lambda: ("disconnect_container", "net1", "db") in svc.calls
+            )
+
     async def test_network_side_column_shows_card_topology_and_endpoints(self) -> None:
         web = make_container("web")
         web.networks = ["net1", "proxy"]
@@ -2306,7 +2329,7 @@ class NetworkActionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("net1", topology)
             self.assertIn("172.18.0.2", topology)
             self.assertNotIn("/16 ──", topology)
-            await wait_until(lambda: "02:42:ac:12:00:02" in render(ENDPOINTS_PANEL_ID))
+            await wait_until(lambda: "⇄ proxy" in render(ENDPOINTS_PANEL_ID))
             for panel_id in (TOPOLOGY_PANEL_ID, ENDPOINTS_PANEL_ID):
                 self.assertTrue(app.query_one(f"#{panel_id}").display)
             title = Content.from_markup(

@@ -2,6 +2,7 @@
 highlighting. Plain pytest, no Textual app."""
 
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from rich.text import Text
@@ -922,7 +923,7 @@ class EndpointsPanelTests(unittest.TestCase):
         return cap.get()
 
     def test_table_has_ip_and_mac_columns(self) -> None:
-        out = self._render(self._members(["web"]), 60, 5)
+        out = self._render(self._members(["web"]), 70, 5)
         self.assertIn("CONTAINER", out)
         self.assertIn("IPV4", out)
         self.assertIn("MAC", out)
@@ -931,8 +932,31 @@ class EndpointsPanelTests(unittest.TestCase):
         self.assertIn("m0", out)
 
     def test_narrow_table_drops_the_mac_column(self) -> None:
+        out = self._render(self._members(["web"]), 60, 5)
+        self.assertNotIn("MAC", out)
+        self.assertIn("ALSO ON", out)
+
+    def test_very_narrow_table_drops_also_on_too(self) -> None:
         out = self._render(self._members(["web"]), 40, 5)
         self.assertNotIn("MAC", out)
+        self.assertNotIn("ALSO ON", out)
+
+    def test_also_on_lists_the_other_networks(self) -> None:
+        members = [
+            replace(m, other_networks=["proxy", "backend"]) if m.name == "web" else m
+            for m in self._members(["web", "db"])
+        ]
+        out = self._render(members, 70, 5)
+        self.assertIn(
+            "⇄ proxy, backend", next(r for r in out.splitlines() if "web" in r)
+        )
+        self.assertIn("—", next(r for r in out.splitlines() if "db" in r))
+
+    def test_summary_line_does_not_add_a_column(self) -> None:
+        members = self._members(list("abcdef"), stopped=("a", "b", "c", "d"))
+        for width in (40, 60, 70):
+            lines = self._render(members, width, 4).splitlines()
+            self.assertEqual(len({len(r) for r in lines}), 1, width)
 
     def test_hidden_stopped_members_get_a_summary_line(self) -> None:
         members = self._members(list("abcdef"), stopped=("a", "b", "c", "d"))

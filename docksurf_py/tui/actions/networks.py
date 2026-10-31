@@ -5,6 +5,7 @@ from textual import work
 from textual.widgets import TabbedContent
 
 from docksurf_py.core.models import Network
+from docksurf_py.core.render.topology import network_members
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.actions.common import _Base
 from docksurf_py.tui.widgets import ContainerPickerScreen, PromptField, PromptScreen
@@ -84,13 +85,17 @@ class NetworkActionHandler(_Base):
         net = self._require_network()
         if net is None:
             return
-        if not net.endpoints:
+        # The same members the endpoints panel lists: Docker's endpoints are
+        # running containers only, but a stopped one can be disconnected too.
+        containers = self.snapshot.containers if self.snapshot else []
+        members = network_members(net, containers)
+        if not members:
             self.notify(
                 f"No containers attached to {escape(net.name)}",
                 severity="information",
             )
             return
-        options = [(ep.container_name, ep.container_name) for ep in net.endpoints]
+        options = [(m.name, m.name) for m in members]
         container = await self.push_screen_wait(
             ContainerPickerScreen(f"Disconnect a container from {net.name}", options)
         )
