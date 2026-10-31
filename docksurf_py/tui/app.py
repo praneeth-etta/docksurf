@@ -43,6 +43,13 @@ from docksurf_py.core.render.images import (
     TAG_WIDTH,
     status_rank,
 )
+from docksurf_py.core.render.networks import (
+    CONTAINERS_WIDTH,
+    NETWORK_DRIVER_WIDTH,
+    NETWORK_NAME_WIDTH,
+    SCOPE_WIDTH,
+    SUBNET_WIDTH,
+)
 from docksurf_py.core.render.volumes import (
     DRIVER_WIDTH,
     PROJECT_WIDTH,
@@ -66,6 +73,7 @@ from docksurf_py.core.state.status import STATE_SORT_ORDER, classify
 from docksurf_py.core.state.tables import (
     CONTAINER_CHIPS,
     IMAGE_CHIPS,
+    NETWORK_GROUP_SPECS,
     ResourceKind,
     TablesState,
     matches_container,
@@ -99,6 +107,7 @@ from docksurf_py.tui.ids import (
     DETAIL_PANE_ID,
     DISK_PANEL_ID,
     EMPTY_STATE_IDS,
+    ENDPOINTS_PANEL_ID,
     FILTER_PLACEHOLDERS,
     LAYERS_PANEL_ID,
     LIST_PANEL_ID,
@@ -112,6 +121,7 @@ from docksurf_py.tui.ids import (
     SIDE_COLUMN_ID,
     TOOLBAR_LINE_ID,
     TOP_BAR_ID,
+    TOPOLOGY_PANEL_ID,
     TableID,
 )
 from docksurf_py.tui.observability import LiveStatsController
@@ -134,6 +144,7 @@ from docksurf_py.tui.widgets import (
     ContainerTable,
     DetailPane,
     DiskPanel,
+    EndpointsPanel,
     HelpScreen,
     ImageTable,
     LayersPanel,
@@ -144,6 +155,7 @@ from docksurf_py.tui.widgets import (
     SearchBar,
     ToolbarLine,
     TopBar,
+    TopologyPanel,
     VolumeTable,
     WhaleScreen,
 )
@@ -275,6 +287,7 @@ class AppContext(Protocol):
     def _images_footer(self, marked: list) -> SafeMarkup: ...
     def _images_toolbar_line(self, width: int) -> SafeMarkup: ...
     def _volumes_footer(self, marked: list) -> SafeMarkup: ...
+    def _networks_footer(self, marked: list) -> SafeMarkup: ...
     def _volumes_toolbar_line(self, width: int) -> SafeMarkup: ...
     def _repaint_disk_panel(self) -> None: ...
     def _sync_side_logs(self) -> None: ...
@@ -545,11 +558,22 @@ class DockSurfApp(
                         "Driver": lambda n: n.driver.lower(),
                         "Scope": lambda n: n.scope.lower(),
                     },
+                    groups=NETWORK_GROUP_SPECS,
+                    grouped_by="owner",
                 ),
                 table_id=TableID.NETWORKS,
-                columns=("Name", "Driver", "Scope", "Containers"),
+                columns=("Name", "Driver", "Scope", "Subnet", "Containers"),
                 populate=self._populate_network_table,
                 show_details=self._show_network_details,
+                column_widths={
+                    "Name": NETWORK_NAME_WIDTH,
+                    "Driver": NETWORK_DRIVER_WIDTH,
+                    "Scope": SCOPE_WIDTH,
+                    "Subnet": SUBNET_WIDTH,
+                    "Containers": CONTAINERS_WIDTH,
+                },
+                footer=self._networks_footer,
+                cursor_gutter=True,
             ),
         }
 
@@ -596,6 +620,8 @@ class DockSurfApp(
                 yield LayersPanel(id=LAYERS_PANEL_ID, classes="panel")
                 yield SafeDeletePanel(id=SAFE_DELETE_PANEL_ID, classes="panel -warning")
                 yield DiskPanel(id=DISK_PANEL_ID, classes="panel")
+                yield TopologyPanel(id=TOPOLOGY_PANEL_ID, classes="panel")
+                yield EndpointsPanel(id=ENDPOINTS_PANEL_ID, classes="panel")
                 yield LogPane(
                     id=LOG_PANE_ID,
                     classes="panel",

@@ -20,8 +20,9 @@ from docksurf_py.core.render.containers import (
     project_row_cells,
 )
 from docksurf_py.core.render.images import image_row_cells
-from docksurf_py.core.render.markup import (
-    network_containers_markup,
+from docksurf_py.core.render.networks import (
+    network_group_cells,
+    network_row_cells,
 )
 from docksurf_py.core.render.palette import fg
 from docksurf_py.core.render.volumes import volume_group_cells, volume_row_cells
@@ -195,16 +196,23 @@ class TableRenderer(_Base):
             _safe_row(table, self._gutter_cell(TabID.VOLUMES, row, False), *cells)
         self._finish_populate(TabID.VOLUMES, table, rows)
 
-    def _populate_network_table(self, table: DataTable, rows: list[Network]) -> None:
+    def _populate_network_table(
+        self, table: DataTable, rows: list[RowGroup | Network]
+    ) -> None:
         containers = self.snapshot.containers if self.snapshot else []
+        p = self._view.palette
         for n in rows:
+            if isinstance(n, RowGroup):
+                _safe_row(
+                    table,
+                    self._gutter_cell(TabID.NETWORKS, n, False),
+                    *network_group_cells(n, p),
+                )
+                continue
             _safe_row(
                 table,
-                self._mark_cell(TabID.NETWORKS, n),
-                n.name,
-                n.driver,
-                n.scope,
-                network_containers_markup(n, containers),
+                self._gutter_cell(TabID.NETWORKS, n, False),
+                *network_row_cells(n, containers, p),
             )
         self._finish_populate(TabID.NETWORKS, table, rows)
 

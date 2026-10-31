@@ -227,9 +227,14 @@ def key_hints(ctx: HintContext) -> list[Hint]:
     elif ctx.tab == TabID.NETWORKS:
         if ctx.row == "network" and ctx.related:
             hints.append(_JUMP)
-        hints += [("+", "new")]
         if ctx.row == "network":
-            hints += [("v", "connect"), ("m", "disconnect"), _MARK, _DELETE]
+            hints += [("v", "connect"), ("m", "disconnect")]
+        hints.append(("+", "new"))
+        if ctx.row == "network":
+            hints += [_MARK, _DELETE]
+        elif ctx.row == "network_group":
+            hints.append(("space", "collapse"))
+        hints.append(("P", "prune"))
     return hints
 
 

@@ -37,12 +37,14 @@ from docksurf_py.tui.actions.common import _Base
 from docksurf_py.tui.ids import (
     DETAIL_PANE_ID,
     DISK_PANEL_ID,
+    ENDPOINTS_PANEL_ID,
     LAYERS_PANEL_ID,
     LIST_PANEL_ID,
     LIVE_PANEL_ID,
     LOG_PANE_ID,
     SAFE_DELETE_PANEL_ID,
     SIDE_COLUMN_ID,
+    TOPOLOGY_PANEL_ID,
 )
 from docksurf_py.tui.widgets import (
     ContainerPickerScreen,
@@ -503,6 +505,10 @@ class ContainerActionHandler(_Base):
         active = self.query_one(TabbedContent).active
         self.query_one(f"#{LAYERS_PANEL_ID}").display = active == TabID.IMAGES
         self.query_one(f"#{DISK_PANEL_ID}").display = active == TabID.VOLUMES
+        networks = active == TabID.NETWORKS and not full
+        self.query_one(f"#{TOPOLOGY_PANEL_ID}").display = networks
+        self.query_one(f"#{ENDPOINTS_PANEL_ID}").display = networks
+        self.query_one(f"#{SIDE_COLUMN_ID}").set_class(networks, "-networks")
         if active != TabID.VOLUMES:  # on Volumes, the focused row decides
             self.query_one(f"#{SAFE_DELETE_PANEL_ID}").display = False
         # The live panel follows the stats target, except in full view.

@@ -843,3 +843,38 @@ class RowGroupTests(unittest.TestCase):
         tables = TablesState(_kinds())
         rows = tables.build_rows(TabID.IMAGES, _snap(images=[_image("a", "1")]))
         self.assertFalse(any(isinstance(r, RowGroup) for r in rows))
+
+
+class NetworkGroupSpecTests(unittest.TestCase):
+    def _groups(self, nets: list[Network]) -> dict[str, list[str]]:
+        from docksurf_py.core.state.tables import NETWORK_GROUP_SPECS
+
+        out: dict[str, list[str]] = {}
+        for n in nets:
+            spec = next(
+                s
+                for s in NETWORK_GROUP_SPECS
+                if s.matches(n, DockerSnapshot([], [], [], nets))
+            )
+            out.setdefault(spec.key, []).append(n.name)
+        return out
+
+    def test_buckets_by_owner(self) -> None:
+        compose = _network("app_default")
+        compose.labels = {"com.docker.compose.project": "app"}
+        nets = [_network("bridge"), _network("mine"), compose, _network("none")]
+        self.assertEqual(
+            self._groups(nets),
+            {
+                "builtin": ["bridge", "none"],
+                "other": ["mine"],
+                "compose": ["app_default"],
+            },
+        )
+
+    def test_group_order_is_compose_other_builtin(self) -> None:
+        from docksurf_py.core.state.tables import NETWORK_GROUP_SPECS
+
+        self.assertEqual(
+            [s.key for s in NETWORK_GROUP_SPECS], ["compose", "other", "builtin"]
+        )

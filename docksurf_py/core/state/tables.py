@@ -21,7 +21,7 @@ from docksurf_py.core.models import (
 )
 from docksurf_py.core.render.volumes import ORPHANED_KEY, volume_order_key
 from docksurf_py.core.service import DockerService
-from docksurf_py.core.state.ops import DeletePlan, Refusal
+from docksurf_py.core.state.ops import BUILTIN_NETWORKS, DeletePlan, Refusal
 from docksurf_py.core.state.status import RunState, classify
 from docksurf_py.core.types import TabID
 
@@ -212,6 +212,57 @@ def volume_group_specs(sizes: Callable[[], Mapping[str, int]]) -> tuple[GroupSpe
             "○",
         ),
     )
+
+
+COMPOSE_NETWORK_LABELS = ("com.docker.compose.network", "com.docker.compose.project")
+BUILTIN_NETWORK_KEY = "builtin"
+
+
+def is_builtin_network(n: Network) -> bool:
+    return n.name in BUILTIN_NETWORKS
+
+
+def is_compose_network(n: Network) -> bool:
+    return any(label in n.labels for label in COMPOSE_NETWORK_LABELS)
+
+
+def _network_order(n: Network) -> Any:
+    return n.name.lower()
+
+
+def _builtin_network_order(n: Network) -> Any:
+    return BUILTIN_NETWORKS.index(n.name)
+
+
+NETWORK_GROUP_SPECS: tuple[GroupSpec, ...] = (
+    GroupSpec(
+        "compose",
+        "COMPOSE PROJECTS",
+        "primary",
+        "",
+        lambda n, snap: not is_builtin_network(n) and is_compose_network(n),
+        _network_order,
+        "▣",
+    ),
+    GroupSpec(
+        "other",
+        "OTHER",
+        "muted",
+        "",
+        lambda n, snap: not is_builtin_network(n),
+        _network_order,
+        "◇",
+    ),
+    GroupSpec(
+        BUILTIN_NETWORK_KEY,
+        "BUILT-IN",
+        "muted",
+        "can't be deleted",
+        lambda n, snap: is_builtin_network(n),
+        _builtin_network_order,
+        "◈",
+    ),
+)
 
 
 @dataclass(frozen=True)

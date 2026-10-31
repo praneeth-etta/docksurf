@@ -628,3 +628,317 @@ class LayersSummaryTests(unittest.TestCase):
     def test_layer_commands_are_escaped(self) -> None:
         (line,) = self._lines([_layer("/bin/sh -c echo [bold]x", self.MB)])
         self.assertIn("RUN echo [bold]x", line)
+
+
+class NetworkContainersCellTests(unittest.TestCase):
+    def _cell(self, endpoints: list[str], containers: list) -> str:
+        from docksurf_py.core.models import Network, NetworkEndpoint
+        from docksurf_py.core.render.networks import network_containers_cell
+
+        net = Network(
+            "n", "net", "bridge", "", "", "local", [],
+            [NetworkEndpoint(container_name=e) for e in endpoints],
+        )  # fmt: skip
+        return Text.from_markup(
+            network_containers_cell(net, containers, TIDE_PALETTE)
+        ).plain
+
+    def test_empty_network(self) -> None:
+        self.assertEqual(self._cell([], []), "empty")
+
+    def test_running_dots_come_first_with_up_count(self) -> None:
+        up, down = make_container("up"), make_container("down", running=False)
+        down.networks = ["net"]
+        self.assertEqual(self._cell(["up"], [up, down]), "●○ 1/2")
+
+    def test_unknown_endpoint_counts_as_running(self) -> None:
+        self.assertEqual(self._cell(["ghost"], []), "● 1/1")
+
+    def test_dots_collapse_past_the_limit(self) -> None:
+        names = [f"c{i:02d}" for i in range(11)]
+        cs = [make_container(n) for n in names]
+        for c in cs:
+            c.networks = ["net"]
+        self.assertEqual(self._cell(names, cs), "●●●●●●●●+3 11/11")
+
+    def test_none_running_is_all_hollow(self) -> None:
+        c = make_container("a", running=False)
+        c.networks = ["net"]
+        self.assertEqual(self._cell([], [c]), "○ 0/1")
+
+
+class NetworkRowCellsTests(unittest.TestCase):
+    def _net(self, **kw):
+        from docksurf_py.core.models import Network
+
+        base = dict(id="n", name="net", driver="bridge", subnet="10.0.0.0/24",
+                    gateway="", scope="local", used_by=[])  # fmt: skip
+        return Network(**{**base, **kw})
+
+    def _plain(self, net) -> list[str]:
+        from docksurf_py.core.render.networks import network_row_cells
+
+        return [
+            Text.from_markup(c).plain for c in network_row_cells(net, [], TIDE_PALETTE)
+        ]
+
+    def test_cells(self) -> None:
+        self.assertEqual(
+            self._plain(self._net()),
+            ["net", "bridge", "local", "10.0.0.0/24", "empty"],
+        )
+
+    def test_missing_subnet_is_a_dash(self) -> None:
+        for subnet in ("", "N/A"):
+            self.assertEqual(self._plain(self._net(subnet=subnet))[3], "—")
+
+    def test_long_name_is_truncated_to_the_column(self) -> None:
+        from docksurf_py.core.render.networks import NETWORK_NAME_WIDTH
+
+        name = self._plain(self._net(name="x" * 60))[0]
+        self.assertLessEqual(len(name), NETWORK_NAME_WIDTH)
+
+    def test_footer_legend(self) -> None:
+        from docksurf_py.core.render.networks import networks_footer
+
+        self.assertEqual(
+            Text.from_markup(networks_footer(TIDE_PALETTE)).plain,
+            "● running  ○ stopped  ✕ exited with error"
+            "   one dot per attached container",
+        )
+
+
+def _bus_net(names: list[str], stopped: tuple[str, ...] = (), **kw):
+    """A network and members for `bus_topology`: running ones get 172.18.0.N."""
+    from docksurf_py.core.models import Network, NetworkEndpoint
+    from docksurf_py.core.render.topology import network_members
+
+    containers = []
+    endpoints = []
+    for i, name in enumerate(names):
+        c = make_container(name, running=name not in stopped)
+        c.networks = ["dossier"]
+        containers.append(c)
+        if name not in stopped:
+            endpoints.append(NetworkEndpoint(name, f"172.18.0.{i + 2}/16", "", f"m{i}"))
+    net = Network(
+        "id1234567890abcdef", "dossier", "bridge", "172.18.0.0/16", "172.18.0.1",
+        "local", [], endpoints, **kw,
+    )  # fmt: skip
+    return net, network_members(net, containers)
+
+
+def _bus(names, width, stopped=()):
+    from docksurf_py.core.render.topology import bus_topology
+
+    net, members = _bus_net(names, stopped)
+    return bus_topology(net, members, TIDE_PALETTE, width).plain
+
+
+class BusTopologyTests(unittest.TestCase):
+    def test_empty_network_is_the_hub_and_a_note(self) -> None:
+        self.assertEqual(
+            _bus([], 60),
+            "\n".join(
+                [
+                    "╭─────────────────────────────────╮",
+                    "│ dossier                         │",
+                    "│ bridge · 172.18.0.0/16          │",
+                    "│ gateway 172.18.0.1 · 0 attached │",
+                    "╰─────────────────────────────────╯",
+                    "no containers attached",
+                ]
+            ),
+        )
+
+    def test_one_member_hangs_off_the_bus_with_a_corner(self) -> None:
+        self.assertEqual(
+            _bus(["web"], 60),
+            "\n".join(
+                [
+                    "   ╭─────────────────────────────────╮",
+                    "   │ dossier                         │",
+                    "   │ bridge · 172.18.0.0/16          │",
+                    "   │ gateway 172.18.0.1 · 1 attached │",
+                    "   ╰────────────────┬────────────────╯",
+                    "                    │",
+                    "● web  172.18.0.2 ──┘",
+                ]
+            ),
+        )
+
+    def test_two_members_share_a_row_across_the_bus(self) -> None:
+        rows = _bus(["a", "b"], 60).split("\n")
+        self.assertEqual(rows[-1], "● a  172.18.0.2 ──┼── 172.18.0.3  ● b")
+        bus_col = rows[-1].index("┼")
+        self.assertEqual(rows[-2].index("│"), bus_col)
+        self.assertEqual(rows[4].index("┬"), bus_col)
+
+    def test_seven_members_pair_up_and_the_odd_one_closes_the_bus(self) -> None:
+        names = ["a", "b", "c", "d", "e", "f", "g"]
+        rows = _bus(names, 80).split("\n")
+        member_rows = [r for r in rows[6:] if "─" in r]
+        self.assertEqual(len(member_rows), 4)
+        self.assertEqual([r.count("┼") for r in member_rows], [1, 1, 1, 0])
+        self.assertTrue(member_rows[-1].endswith("┘"))
+        for name in names:
+            self.assertEqual(
+                sum(name in r.split("──")[0] + r.split("──")[-1] for r in member_rows),
+                1,
+            )
+
+    def test_running_members_come_first(self) -> None:
+        text = _bus(["a", "b", "c", "d"], 80, stopped=("a", "b"))
+        first = [r for r in text.split("\n") if "┼" in r][0]
+        self.assertIn("● c", first)
+        self.assertIn("● d", first)
+        self.assertIn("○ a", text)
+
+    def test_rows_never_exceed_the_width(self) -> None:
+        names = [f"service-with-a-long-name-{i}" for i in range(7)]
+        for count in range(0, 8):
+            for width in range(12, 121, 7):
+                for row in _bus(names[:count], width).split("\n"):
+                    self.assertLessEqual(len(row), width, (count, width, row))
+
+    def test_long_names_are_ellipsized_before_going_single_column(self) -> None:
+        text = _bus(["x" * 40, "y" * 40], 70)
+        self.assertIn("┼", text)
+        self.assertIn("…", text)
+
+    def test_narrow_width_is_a_single_column_bus(self) -> None:
+        text = _bus(["rabbitmq", "redis", "app"], 40)
+        rows = text.split("\n")
+        self.assertNotIn("┼", text)
+        self.assertEqual(
+            rows[-3:],
+            [
+                " ├── 172.18.0.4  ● app",
+                " ├── 172.18.0.2  ● rabbitmq",
+                " └── 172.18.0.3  ● redis",
+            ],
+        )
+        self.assertEqual(rows[4][:2], "╰┬")
+
+    def test_a_missing_ip_is_a_dash(self) -> None:
+        self.assertIn("— ──┘", _bus(["a"], 60, stopped=("a",)))
+
+
+class NetworkCardTests(unittest.TestCase):
+    def _text(self, **kw) -> str:
+        from rich.console import Console
+
+        from docksurf_py.core.render.cards import network_card
+
+        net, _ = _bus_net([], **kw)
+        card = network_card(net, TIDE_PALETTE)
+        console = Console(width=60)
+        with console.capture() as cap:
+            console.print(card.body)
+        return cap.get()
+
+    def test_title_and_key(self) -> None:
+        from docksurf_py.core.render.cards import network_card
+
+        net, _ = _bus_net([])
+        card = network_card(net, TIDE_PALETTE)
+        self.assertEqual(Text.from_markup(card.title).plain, "≋ dossier · network")
+        self.assertEqual(card.key, "network:dossier")
+
+    def test_pills_and_addresses(self) -> None:
+        out = self._text()
+        self.assertIn("BRIDGE", out)
+        self.assertIn("local", out)
+        self.assertNotIn("compose project", out)
+        self.assertIn("172.18.0.0/16", out)
+        self.assertIn("172.18.0.1", out)
+        self.assertIn("id1234567890", out)
+        self.assertNotIn("id1234567890a", out)  # 12 characters
+        self.assertIn("i inspect", out)
+
+    def test_compose_project_is_named(self) -> None:
+        out = self._text(labels={"com.docker.compose.project": "docker"})
+        self.assertIn("compose project docker", out)
+
+    def test_missing_subnet_and_gateway_are_dashes(self) -> None:
+        from rich.console import Console
+
+        from docksurf_py.core.models import Network
+        from docksurf_py.core.render.cards import network_card
+
+        net = Network("abc", "n", "bridge", "N/A", "N/A", "local", [])
+        console = Console(width=60)
+        with console.capture() as cap:
+            console.print(network_card(net, TIDE_PALETTE).body)
+        out = cap.get()
+        self.assertEqual(out.count("—"), 2)
+
+
+class EndpointsPanelTests(unittest.TestCase):
+    def _members(self, names, stopped=()):
+        return _bus_net(names, stopped)[1]
+
+    def test_window_shows_everything_when_it_fits(self) -> None:
+        from docksurf_py.core.render.networks import endpoint_window
+
+        shown, hidden, kind = endpoint_window(self._members(["a", "b", "c"]), 4)
+        self.assertEqual(
+            ([m.name for m in shown], hidden, kind), (["a", "b", "c"], 0, "")
+        )
+
+    def test_window_folds_stopped_members_when_short(self) -> None:
+        from docksurf_py.core.render.networks import endpoint_window
+
+        members = self._members(list("abcdef"), stopped=("a", "b", "c", "d"))
+        shown, hidden, kind = endpoint_window(members, 4)
+        self.assertEqual(
+            ([m.name for m in shown], hidden, kind), (["e", "f"], 4, "stopped")
+        )
+
+    def test_window_clips_running_members_with_more(self) -> None:
+        from docksurf_py.core.render.networks import endpoint_window
+
+        shown, hidden, kind = endpoint_window(self._members(list("abcdef")), 4)
+        self.assertEqual(
+            ([m.name for m in shown], hidden, kind), (["a", "b", "c"][:2], 4, "more")
+        )
+
+    def test_running_come_before_stopped(self) -> None:
+        from docksurf_py.core.render.networks import endpoint_window
+
+        shown, _, _ = endpoint_window(
+            self._members(["a", "b", "c"], stopped=("a",)), 10
+        )
+        self.assertEqual([m.name for m in shown], ["b", "c", "a"])
+
+    def _render(self, members, width, height) -> str:
+        from rich.console import Console
+
+        from docksurf_py.core.render.networks import endpoints_body
+
+        console = Console(width=width)
+        with console.capture() as cap:
+            console.print(endpoints_body(members, TIDE_PALETTE, width, height))
+        return cap.get()
+
+    def test_table_has_ip_and_mac_columns(self) -> None:
+        out = self._render(self._members(["web"]), 60, 5)
+        self.assertIn("CONTAINER", out)
+        self.assertIn("IPV4", out)
+        self.assertIn("MAC", out)
+        self.assertIn("172.18.0.2", out)
+        self.assertNotIn("/16", out)
+        self.assertIn("m0", out)
+
+    def test_narrow_table_drops_the_mac_column(self) -> None:
+        out = self._render(self._members(["web"]), 40, 5)
+        self.assertNotIn("MAC", out)
+
+    def test_hidden_stopped_members_get_a_summary_line(self) -> None:
+        members = self._members(list("abcdef"), stopped=("a", "b", "c", "d"))
+        out = self._render(members, 60, 4)
+        self.assertIn("+ 4 stopped", out)
+        self.assertNotIn("○", out)
+
+    def test_empty_network(self) -> None:
+        self.assertIn("no containers attached", self._render([], 60, 5))

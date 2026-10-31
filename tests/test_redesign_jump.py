@@ -247,6 +247,40 @@ class JumpFromOtherTabsTests(unittest.IsolatedAsyncioTestCase):
                 [cid for cid, _ in picker._options], ["db", "worker-a", "worker-b"]
             )
 
+    async def test_enter_on_a_network_with_one_endpoint_jumps_straight_there(
+        self,
+    ) -> None:
+        def snapshot() -> DockerSnapshot:
+            snap = _snapshot()
+            snap.networks[0].endpoints = [NetworkEndpoint("worker-a")]
+            snap.containers = [c for c in snap.containers if c.name != "db"]
+            snap.containers = [
+                replace(c, networks=[]) if c.name == "worker-b" else c
+                for c in snap.containers
+            ]
+            return snap
+
+        app = DockSurfApp(docker=MockDockerService(snapshot))
+        async with app.run_test(size=(160, 40)) as pilot:
+            table = await _open(app, pilot, TabID.NETWORKS, "4")
+            _focus_row(app, TabID.NETWORKS, table, lambda n: n.name == "backend")
+            await pilot.pause(0.1)
+            await pilot.press("enter")
+            await _focused_container(app, "worker-a")
+
+    async def test_enter_on_a_group_header_stays_on_the_tab(self) -> None:
+        app = _app()
+        async with app.run_test(size=(160, 40)) as pilot:
+            table = await _open(app, pilot, TabID.NETWORKS, "4")
+            table.move_cursor(row=0)
+            await pilot.pause(0.1)
+            self.assertIsInstance(app._tables.rows[TabID.NETWORKS][0], RowGroup)
+            with patch.object(app, "notify") as notify:
+                await pilot.press("enter")
+                await pilot.pause(0.2)
+            self.assertIn("Nothing to jump to", notify.call_args.args[0])
+            self.assertEqual(app.query_one(TabbedContent).active, TabID.NETWORKS)
+
     async def test_enter_on_the_containers_tab_does_not_jump(self) -> None:
         app = _app()
         async with app.run_test(size=(160, 40)) as pilot:

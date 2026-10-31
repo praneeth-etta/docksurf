@@ -315,6 +315,7 @@ class DockerResourceFetcher:
                     scope=n.attrs.get("Scope", ""),
                     used_by=[],
                     endpoints=endpoints,
+                    labels=n.attrs.get("Labels") or {},
                 )
             )
         return networks

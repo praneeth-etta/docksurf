@@ -19,12 +19,14 @@ from docksurf_py.core.docker import (
     secret_env_count,
 )
 from docksurf_py.core.models import (
+    COMPOSE_PROJECT_LABEL,
     ComposeProject,
     Container,
     ContainerDetail,
     ContainerTop,
     Image,
     ImagePlatform,
+    Network,
     Volume,
 )
 from docksurf_py.core.render.containers import compact_age
@@ -474,5 +476,36 @@ def volume_card(
             _facts_line(p, " ".join(chips), facts),
             Text(""),
             _kv(p, rows, _VOLUME_LABEL_WIDTH),
+        ),
+    )
+
+
+_NETWORK_LABEL_WIDTH = 8
+
+
+def network_card(n: Network, p: Palette) -> CardModel:
+    """The network detail card: driver/scope/compose pills, then subnet,
+    gateway and id. Members live in the topology and endpoints panels."""
+    project = n.labels.get(COMPOSE_PROJECT_LABEL, "")
+    facts = [fg(p, "muted", n.scope)] if n.scope else []
+    if project:
+        facts.append(fg(p, "muted", f"compose project {project}"))
+
+    def _addr(value: str) -> str:
+        return fg(p, "muted", "—") if not value or value == "N/A" else escape(value)
+
+    rows: list[tuple[str, str | RenderableType]] = [
+        ("subnet", _addr(n.subnet)),
+        ("gateway", _addr(n.gateway)),
+        ("id", f"{escape(n.id[:12])}   {fg(p, 'muted', 'i inspect')}"),
+    ]
+    return CardModel(
+        key=f"network:{n.name}",
+        title=SafeMarkup(f"{fg(p, 'secondary', '≋')} {escape(n.name)} · network"),
+        subtitle="",
+        body=Group(
+            _facts_line(p, pill(p, n.driver.upper() or "NETWORK", "primary"), facts),
+            Text(""),
+            _kv(p, rows, _NETWORK_LABEL_WIDTH),
         ),
     )

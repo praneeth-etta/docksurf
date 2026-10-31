@@ -198,6 +198,7 @@ class Network:
     scope: str
     used_by: list[str]
     endpoints: list[NetworkEndpoint] = field(default_factory=list)
+    labels: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

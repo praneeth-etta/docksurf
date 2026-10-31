@@ -1,33 +1,42 @@
 """DetailPaneRenderer — formats and pushes resource details into the side pane."""
 
-from rich.markup import escape as _escape
 from textual.widgets import DataTable, TabbedContent
 
 from docksurf_py.core.models import ComposeProject
 from docksurf_py.core.render.cards import (
     container_card,
     image_card,
+    network_card,
     project_card,
     volume_card,
 )
 from docksurf_py.core.render.images import image_tags
-from docksurf_py.core.render.topology import network_topology
+from docksurf_py.core.render.networks import (
+    endpoints_body,
+    topology_body,
+    topology_title,
+)
+from docksurf_py.core.render.palette import fg
+from docksurf_py.core.render.topology import network_members
 from docksurf_py.core.render.volumes import orphan_summary, safe_delete_body
 from docksurf_py.core.state.navigation import related_containers
 from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.types import (
-    SafeMarkup,
     TabID,
 )
-from docksurf_py.tui.ids import DETAIL_PANE_ID, SAFE_DELETE_PANEL_ID
+from docksurf_py.tui.ids import (
+    DETAIL_PANE_ID,
+    ENDPOINTS_PANEL_ID,
+    SAFE_DELETE_PANEL_ID,
+    TOPOLOGY_PANEL_ID,
+)
 from docksurf_py.tui.renderer.common import _Base
-from docksurf_py.tui.widgets import DetailPane, SafeDeletePanel
-
-
-def _dim(value: object) -> SafeMarkup:
-    """Mute a low-signal value (a raw ID/SHA) so it doesn't compete for
-    attention with the fields a user actually scans for."""
-    return SafeMarkup(f"[dim]{_escape(str(value))}[/]")
+from docksurf_py.tui.widgets import (
+    DetailPane,
+    EndpointsPanel,
+    SafeDeletePanel,
+    TopologyPanel,
+)
 
 
 class DetailPaneRenderer(_Base):
@@ -41,7 +50,6 @@ class DetailPaneRenderer(_Base):
         p = self._view.palette
         if isinstance(item, ComposeProject):
             pane.update_card(project_card(item, p))
-            pane.clear_topology()
             return
         c = item
         # env/health-log/started-at/restart-count/IPs aren't in the list summary.
@@ -58,7 +66,6 @@ class DetailPaneRenderer(_Base):
                 top_loading=self._live.top_target == c.id,
             )
         )
-        pane.clear_topology()
 
     def _refresh_detail_card(self) -> None:
         """Re-render the focused row's card (after env reveal, `t`, a detail
@@ -93,7 +100,6 @@ class DetailPaneRenderer(_Base):
                 self._view.palette,
             )
         )
-        pane.clear_topology()
         self._paint_image_layers(image)
 
     def _show_volume_details(self, pane: DetailPane, row: int) -> None:
@@ -111,7 +117,6 @@ class DetailPaneRenderer(_Base):
         pane.update_card(
             volume_card(volume, size, related_containers(volume, self.snapshot), p)
         )
-        pane.clear_topology()
         if volume.used_by or self.snapshot is None:
             safe.hide()
         else:
@@ -123,26 +128,22 @@ class DetailPaneRenderer(_Base):
         if row >= len(networks):
             return
         network = networks[row]
+        topology = self.query_one(f"#{TOPOLOGY_PANEL_ID}", TopologyPanel)
+        endpoints = self.query_one(f"#{ENDPOINTS_PANEL_ID}", EndpointsPanel)
+        p = self._view.palette
         if isinstance(network, RowGroup):
             pane.clear_details()
+            topology.show_message("topology", fg(p, "muted", "select a network"))
+            endpoints.show_message("endpoints", fg(p, "muted", "select a network"))
             return
-
-        identity = {
-            "ID": _dim(network.id),
-            "Driver": network.driver,
-            "Scope": network.scope,
-        }
-        addressing = {
-            "Subnet": network.subnet,
-            "Gateway": network.gateway,
-        }
-
-        pane.update_details(
-            f"Network: {network.name}",
-            {"Identity": identity, "Addressing": addressing},
-        )
-        # The attached-containers list is drawn as the topology diagram below
-        # the panel (endpoints joined with snapshot containers), replacing the
-        # old plaintext "Attached" section.
+        pane.update_card(network_card(network, p))
         containers = self.snapshot.containers if self.snapshot else []
-        pane.update_topology(network_topology(network, containers))
+        members = network_members(network, containers)
+        topology.show_content(
+            topology_title(len(members)),
+            lambda width, height: topology_body(network, containers, p, width),
+        )
+        endpoints.show_content(
+            "endpoints",
+            lambda width, height: endpoints_body(members, p, width, height),
+        )

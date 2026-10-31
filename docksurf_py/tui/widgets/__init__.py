@@ -27,6 +27,7 @@ from docksurf_py.tui.widgets.log_pane import (
     LogSource,
     SelectableRichLog,
 )
+from docksurf_py.tui.widgets.network_panels import EndpointsPanel, TopologyPanel
 from docksurf_py.tui.widgets.prune_screen import PruneScreen
 from docksurf_py.tui.widgets.pull_progress_screen import PullProgressScreen
 from docksurf_py.tui.widgets.safe_delete_panel import SafeDeletePanel
@@ -49,6 +50,8 @@ __all__ = [
     "NetworkTable",
     "DetailPane",
     "DiskPanel",
+    "EndpointsPanel",
+    "TopologyPanel",
     "SafeDeletePanel",
     "ConfirmDialog",
     "PromptField",

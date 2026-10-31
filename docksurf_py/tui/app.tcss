@@ -74,6 +74,18 @@ BottomBar {
     height: 2fr;
 }
 
+/* Networks: a compact card on top, the bus diagram sized to its content (but
+   never more than half the column), and the endpoints table taking the rest. */
+#side-column.-networks > #detail-pane {
+    height: auto;
+    max-height: 12;
+}
+
+#side-column.-networks > #topology-panel {
+    height: auto;
+    max-height: 55%;
+}
+
 /* The one place a border carries status (design board 6 says it never does):
    `safe to delete` is destructive advice, so its border stays `warning`. It is
    the card's whole point, and it only shows for an orphaned volume. */

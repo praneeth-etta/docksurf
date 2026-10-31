@@ -23,6 +23,7 @@ from docksurf_py.core.render.chrome import (
     top_bar,
 )
 from docksurf_py.core.render.images import images_footer
+from docksurf_py.core.render.networks import networks_footer
 from docksurf_py.core.render.observability import images_disk_line, render_df_bars
 from docksurf_py.core.render.palette import fg
 from docksurf_py.core.render.volumes import (
@@ -210,6 +211,9 @@ class ChromeController(_Base):
 
     def _volumes_footer(self, marked: list[Volume]) -> SafeMarkup:
         return volumes_footer(self._view.palette)
+
+    def _networks_footer(self, marked: list[Network]) -> SafeMarkup:
+        return networks_footer(self._view.palette)
 
     def _volumes_toolbar_line(self, width: int) -> SafeMarkup:
         volumes = self.snapshot.volumes if self.snapshot is not None else []

@@ -177,6 +177,16 @@ class KeyHintsTests(unittest.TestCase):
         self.assertIn("b", self.keys(tab=TabID.VOLUMES, row="volume"))
         self.assertIn("v", self.keys(tab=TabID.NETWORKS, row="network"))
 
+    def test_network_hints_in_plan_order(self) -> None:
+        self.assertEqual(
+            self.keys(tab=TabID.NETWORKS, row="network"),
+            ["v", "m", "+", "space", "d", "P"],
+        )
+        self.assertEqual(
+            self.keys(tab=TabID.NETWORKS, row="network_group"),
+            ["+", "space", "P"],
+        )
+
     def test_empty_tab_still_offers_create(self) -> None:
         self.assertEqual(self.keys(tab=TabID.IMAGES, row="none"), ["+", "P"])
         self.assertEqual(self.keys(tab=TabID.VOLUMES, row="none"), ["b", "+", "P"])

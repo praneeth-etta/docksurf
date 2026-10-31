@@ -106,7 +106,7 @@ class DeletePlanTests(unittest.IsolatedAsyncioTestCase):
         )
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
-            await _focus(app, pilot, TabID.NETWORKS)
+            await _focus(app, pilot, TabID.NETWORKS, row=1)
             with patch.object(app, "notify") as notify:
                 app.action_delete()
                 await pilot.pause()
@@ -209,7 +209,7 @@ class BulkTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(docker=svc)
         async with app.run_test() as pilot:
             await _focus(app, pilot, TabID.NETWORKS)
-            await _mark_rows(app, pilot, TabID.NETWORKS, [0, 1])
+            await _mark_rows(app, pilot, TabID.NETWORKS, [1, 2])
             with patch.object(app, "notify") as notify:
                 app.action_delete()
                 await wait_until(lambda: len(notify.call_args_list) == 3)

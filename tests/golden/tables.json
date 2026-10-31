@@ -1338,36 +1338,57 @@
       "Name",
       "Driver",
       "Scope",
+      "Subnet",
       "Containers"
     ],
     "rows": [
       [
+        "[#7a879d]▾[/]",
+        "[bold][#7a879d]◇ OTHER · 2[/][/]",
         "",
-        "bridge",
-        "bridge",
-        "local",
-        "[dim]0[/]"
+        "",
+        "",
+        ""
       ],
       [
         "",
-        "host",
-        "host",
-        "local",
-        "[dim]0[/]"
+        "[bold #f7ffff]backend[/]",
+        "[#7a879d]overlay[/]",
+        "[#7a879d]swarm[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]●[/][#9ece6a]●[/][#9ece6a]●[/][#7a879d]○[/] [#e5b567]3/4[/]"
       ],
       [
         "",
-        "backend",
-        "overlay",
-        "swarm",
-        "[yellow]4 (3 running)[/]"
+        "[bold #f7ffff]empty[/]",
+        "[#7a879d]bridge[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]empty[/]"
+      ],
+      [
+        "[#7a879d]▾[/]",
+        "[bold][#7a879d]◈ BUILT-IN · 2[/][/]",
+        "",
+        "",
+        "",
+        ""
       ],
       [
         "",
-        "empty",
-        "bridge",
-        "local",
-        "[dim]0[/]"
+        "[bold #f7ffff]bridge[/]",
+        "[#7a879d]bridge[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]empty[/]"
+      ],
+      [
+        "",
+        "[bold #f7ffff]host[/]",
+        "[#7a879d]host[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]empty[/]"
       ]
     ],
     "table_visible": true,
@@ -1379,36 +1400,57 @@
       "Name",
       "Driver ▲",
       "Scope",
+      "Subnet",
       "Containers"
     ],
     "rows": [
       [
+        "[#7a879d]▾[/]",
+        "[bold][#7a879d]◇ OTHER · 2[/][/]",
         "",
-        "bridge",
-        "bridge",
-        "local",
-        "[dim]0[/]"
+        "",
+        "",
+        ""
       ],
       [
         "",
-        "empty",
-        "bridge",
-        "local",
-        "[dim]0[/]"
+        "[bold #f7ffff]empty[/]",
+        "[#7a879d]bridge[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]empty[/]"
       ],
       [
         "",
-        "host",
-        "host",
-        "local",
-        "[dim]0[/]"
+        "[bold #f7ffff]backend[/]",
+        "[#7a879d]overlay[/]",
+        "[#7a879d]swarm[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]●[/][#9ece6a]●[/][#9ece6a]●[/][#7a879d]○[/] [#e5b567]3/4[/]"
+      ],
+      [
+        "[#7a879d]▾[/]",
+        "[bold][#7a879d]◈ BUILT-IN · 2[/][/]",
+        "",
+        "",
+        "",
+        ""
       ],
       [
         "",
-        "backend",
-        "overlay",
-        "swarm",
-        "[yellow]4 (3 running)[/]"
+        "[bold #f7ffff]bridge[/]",
+        "[#7a879d]bridge[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]empty[/]"
+      ],
+      [
+        "",
+        "[bold #f7ffff]host[/]",
+        "[#7a879d]host[/]",
+        "[#7a879d]local[/]",
+        "[#7a879d]—[/]",
+        "[#7a879d]empty[/]"
       ]
     ],
     "table_visible": true,
@@ -1420,15 +1462,25 @@
       "Name",
       "Driver",
       "Scope",
+      "Subnet",
       "Containers"
     ],
     "rows": [
       [
+        "[#7a879d]▾[/]",
+        "[bold][#7a879d]◇ OTHER · 1[/][/]",
         "",
-        "backend",
-        "overlay",
-        "swarm",
-        "[yellow]4 (3 running)[/]"
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "[bold #f7ffff]backend[/]",
+        "[#7a879d]overlay[/]",
+        "[#7a879d]swarm[/]",
+        "[#7a879d]—[/]",
+        "[#9ece6a]●[/][#9ece6a]●[/][#9ece6a]●[/][#7a879d]○[/] [#e5b567]3/4[/]"
       ]
     ],
     "table_visible": true,
@@ -1440,6 +1492,7 @@
       "Name",
       "Driver",
       "Scope",
+      "Subnet",
       "Containers"
     ],
     "rows": [],

@@ -3,9 +3,8 @@
 from rich.markup import escape
 
 from docksurf_py.core.docker import format_relative_time
-from docksurf_py.core.models import ComposeProject, Container, HealthProbe, Network
+from docksurf_py.core.models import ComposeProject, Container, HealthProbe
 from docksurf_py.core.render.palette import Palette, fg
-from docksurf_py.core.render.topology import network_members
 from docksurf_py.core.state.status import (
     GLYPH,
     ROLE,
@@ -107,20 +106,6 @@ def project_status_markup(project: ComposeProject) -> SafeMarkup:
 
 def image_status_markup(used_by: list[str]) -> SafeMarkup:
     return markup_green("In Use") if used_by else markup_yellow("Unused")
-
-
-def network_containers_markup(
-    network: Network, containers: list[Container]
-) -> SafeMarkup:
-    """`N attached (M running)` — the same endpoint↔container join the
-    topology diagram and clipboard summary already use (`topology.py`), so
-    the count here never drifts from what expanding the network shows."""
-    members = network_members(network, containers)
-    if not members:
-        return SafeMarkup("[dim]0[/]")
-    running = sum(1 for m in members if m.running)
-    color = STATUS_GREEN if running == len(members) else STATUS_YELLOW
-    return SafeMarkup(f"[{color}]{len(members)} ({running} running)[/]")
 
 
 def state_glyph(c: Container, p: Palette) -> SafeMarkup:

@@ -1167,6 +1167,34 @@ class GetNetworksEndpointTests(unittest.TestCase):
         networks = DockerResourceFetcher(sdk).get_networks()
         self.assertEqual(networks[0].endpoints, [])
 
+    def test_labels_are_parsed(self) -> None:
+        from docksurf_py.core.docker import DockerResourceFetcher
+
+        fake_net = MagicMock()
+        fake_net.short_id = "abc123"
+        fake_net.name = "proj_default"
+        fake_net.attrs = {
+            "Driver": "bridge",
+            "Scope": "local",
+            "IPAM": {"Config": []},
+            "Labels": {"com.docker.compose.project": "proj"},
+        }
+        sdk = MagicMock()
+        sdk.networks.list.return_value = [fake_net]
+        networks = DockerResourceFetcher(sdk).get_networks()
+        self.assertEqual(networks[0].labels, {"com.docker.compose.project": "proj"})
+
+    def test_null_labels_become_empty_dict(self) -> None:
+        from docksurf_py.core.docker import DockerResourceFetcher
+
+        fake_net = MagicMock()
+        fake_net.short_id = "abc123"
+        fake_net.name = "mynet"
+        fake_net.attrs = {"Driver": "bridge", "Labels": None, "IPAM": {"Config": []}}
+        sdk = MagicMock()
+        sdk.networks.list.return_value = [fake_net]
+        self.assertEqual(DockerResourceFetcher(sdk).get_networks()[0].labels, {})
+
 
 class PullStreamTests(unittest.TestCase):
     def test_yields_chunks_from_api_pull(self) -> None:

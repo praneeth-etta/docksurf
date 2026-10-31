@@ -135,12 +135,6 @@ class TintAndGutterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sum("▌" in g for g in gutter), 1)
             self.assertIn("▌", gutter[table.cursor_row])
 
-    async def test_tabs_not_yet_redesigned_have_no_cursor_gutter(self) -> None:
-        app = DockSurfApp(docker=MockDockerService(_snapshot))
-        async with app.run_test(size=(160, 30)):
-            for tab in (TabID.NETWORKS,):
-                self.assertFalse(app._resource_registry[tab].cursor_gutter)
-
 
 class ChipTests(unittest.IsolatedAsyncioTestCase):
     async def test_f_cycles_chips_and_shrinks_the_table(self) -> None:
