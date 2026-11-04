@@ -38,7 +38,7 @@ class ResourceTable(DataTable):
         self.refresh()
 
     # Private Textual hook (8.2.7): tints every segment of a row, padding
-    # between cells included. `tests/test_redesign_containers.py` fails if a
+    # between cells included. `tests/test_tui_helpers.py` fails if a
     # Textual upgrade removes or renames it.
     def _get_row_style(self, row_index: int, base_style: Style) -> Style:
         style = super()._get_row_style(row_index, base_style)

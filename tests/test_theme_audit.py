@@ -19,7 +19,7 @@ from docksurf_py.tui.themes import (
     UNSUPPORTED_BUILTIN_THEMES,
     palette_from_theme,
 )
-from tests.test_app import MockDockerService, wait_until
+from tests.helpers import MockDockerService, wait_until
 from tests.test_compose import make_container
 
 TEXT_ROLES = ("foreground", "strong", "muted")
@@ -33,10 +33,10 @@ def _palettes() -> list[tuple[str, Palette]]:
 class PaletteAuditTests(unittest.TestCase):
     def test_tide_palette_matches_the_tide_theme(self) -> None:
         """`TIDE_PALETTE` is the design's Tide (and the pre-mount default); the
-        running app uses `palette_from_theme(DOCKSURF_TIDE)`. Known drift, kept
-        because the golden table file pins the derived values: `strong`
-        (#E8EEF8 designed, derived by lightening the foreground) and `faint`
-        (#3A4660 designed, a plain fg/bg blend). Every other role must agree."""
+        running app uses `palette_from_theme(DOCKSURF_TIDE)`. Known drift on two
+        roles: `strong` (#E8EEF8 designed, derived by lightening the foreground)
+        and `faint` (#3A4660 designed, a plain fg/bg blend). Every other role
+        must agree."""
         derived = palette_from_theme(DOCKSURF_TIDE)
         for f in dataclasses.fields(Palette):
             if f.name in ("strong", "faint"):

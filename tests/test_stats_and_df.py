@@ -1,4 +1,5 @@
-import asyncio
+"""Pure tests: stats and df parsing, uptime, event noise, SDK context, df bars."""
+
 import os
 import unittest
 from unittest.mock import MagicMock, patch
@@ -10,19 +11,32 @@ from docksurf_py.core.docker import (
     format_uptime,
 )
 from docksurf_py.core.models import (
-    ContainerStats,
     ContainerTop,
     DiskUsageEntry,
-    DockerSnapshot,
     SystemDf,
 )
 from docksurf_py.core.render.observability import render_df, render_df_bars, render_top
 from docksurf_py.core.render.palette import TIDE_PALETTE
 from docksurf_py.core.state.refresh import is_noise_event
-from docksurf_py.tui.app import DockSurfApp
-from docksurf_py.tui.widgets import SystemDfScreen
-from tests.test_app import EMPTY_SNAPSHOT, MockDockerService, wait_until
-from tests.test_compose import make_container
+
+GB = 1024**3
+
+
+def _df(*entries: DiskUsageEntry) -> SystemDf:
+    return SystemDf(
+        entries=list(entries),
+        total_size=sum(e.size_bytes for e in entries),
+        total_reclaimable=sum(e.reclaimable_bytes for e in entries),
+    )
+
+
+def _bars(df: SystemDf, width: int = 80) -> list[str]:
+    from rich.console import Console
+
+    console = Console(width=width, no_color=True, highlight=False)
+    with console.capture() as cap:
+        console.print(render_df_bars(df, TIDE_PALETTE, width))
+    return [line.rstrip() for line in cap.get().splitlines()]
 
 
 class ParseStatsTests(unittest.TestCase):
@@ -259,245 +273,6 @@ class RenderSmokeTests(unittest.TestCase):
     def test_render_top_handles_no_processes(self) -> None:
         top = ContainerTop(titles=["PID", "CMD"], processes=[])
         self.assertIsNotNone(render_top(top, "web"))
-
-
-class _OneEventStream:
-    """Yields a single container event, then ends (mirrors EventStream shape)."""
-
-    error = None
-
-    def __iter__(self):
-        yield {"Type": "container", "Action": "start"}
-
-    def stop(self) -> None:
-        pass
-
-
-class _OneStatsStream:
-    def __iter__(self):
-        yield ContainerStats(42.0, 100, 200, 50.0, 1, 2, 3, 4)
-
-    def stop(self) -> None:
-        pass
-
-
-class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
-    async def test_docker_event_triggers_refresh_without_manual_r(self) -> None:
-        count = {"n": 0}
-
-        def fetch() -> DockerSnapshot:
-            count["n"] += 1
-            return EMPTY_SNAPSHOT
-
-        svc = MockDockerService(fetch)
-        svc.stream_events = lambda: _OneEventStream()  # type: ignore[method-assign]
-        app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            initial = count["n"]
-            await wait_until(lambda: count["n"] > initial, timeout=3.0)
-            self.assertGreater(count["n"], initial)
-
-    async def test_selecting_running_container_starts_stats_stream(self) -> None:
-        snap = DockerSnapshot([make_container("web", running=True)], [], [], [])
-        svc = MockDockerService(lambda: snap)
-        svc.stream_stats = lambda cid: _OneStatsStream()  # type: ignore[method-assign]
-        app = DockSurfApp(docker=svc)
-        async with app.run_test(size=(160, 40)) as pilot:
-            await pilot.pause()
-            await wait_until(lambda: app._live.stats_target == "web", timeout=2.0)
-            self.assertEqual(app._live.stats_target, "web")
-
-    async def test_stopped_container_has_no_stats_target(self) -> None:
-        snap = DockerSnapshot([make_container("web", running=False)], [], [], [])
-        svc = MockDockerService(lambda: snap)
-        app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.pause()
-            self.assertIsNone(app._live.stats_target)
-
-    async def test_refresh_preserves_selection(self) -> None:
-        from textual.widgets import DataTable
-
-        from docksurf_py.core.types import TabID
-        from docksurf_py.tui.ids import TableID
-
-        snap = DockerSnapshot(
-            [
-                make_container("a", running=False),
-                make_container("b", running=False),
-                make_container("c", running=False),
-            ],
-            [],
-            [],
-            [],
-        )
-        count = {"n": 0}
-
-        def fetch() -> DockerSnapshot:
-            count["n"] += 1
-            return snap
-
-        app = DockSurfApp(docker=MockDockerService(fetch))
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await wait_until(
-                lambda: len(app._tables.rows.get(TabID.CONTAINERS, [])) == 3,
-                timeout=2.0,
-            )
-            table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
-            table.move_cursor(row=1)
-            await pilot.pause()
-            self.assertEqual(app._get_focused_container().id, "b")
-
-            before = count["n"]
-            app.action_refresh()
-            await wait_until(lambda: count["n"] > before, timeout=2.0)
-            await pilot.pause()
-            # A refresh must NOT reset the cursor back to row 0 ("a").
-            self.assertEqual(table.cursor_row, 1)
-            self.assertEqual(app._get_focused_container().id, "b")
-
-    async def test_system_df_screen_opens(self) -> None:
-        svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
-        svc.system_df = lambda: SystemDf(  # type: ignore[method-assign]
-            entries=[DiskUsageEntry("Images", 1, 0, 100, 80)],
-            total_size=100,
-            total_reclaimable=80,
-        )
-        app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            app.action_system_df()
-            await wait_until(
-                lambda: any(isinstance(s, SystemDfScreen) for s in app.screen_stack),
-                timeout=3.0,
-            )
-            self.assertTrue(
-                any(isinstance(s, SystemDfScreen) for s in app.screen_stack)
-            )
-
-    async def test_system_df_failure_notifies_instead_of_opening_screen(self) -> None:
-        """Regression (BF-2): a daemon that dies mid-`system_df` must notify
-        an error, not crash the `@work(thread=True)` worker or push a blank
-        screen."""
-        svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
-        svc._connected = False
-        svc.system_df = lambda: SystemDf(  # type: ignore[method-assign]
-            entries=[], total_size=0, total_reclaimable=0
-        )
-        app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            with patch.object(app, "notify") as notify:
-                app.action_system_df()
-                await pilot.pause()
-                await asyncio.sleep(0.05)
-                await pilot.pause()
-                self.assertFalse(
-                    any(isinstance(s, SystemDfScreen) for s in app.screen_stack)
-                )
-                messages = [call.args[0] for call in notify.call_args_list]
-                self.assertTrue(any("disk usage" in m.lower() for m in messages))
-
-    async def test_container_top_fetches_then_toggles_off(self) -> None:
-        snap = DockerSnapshot([make_container("web", running=True)], [], [], [])
-        svc = MockDockerService(lambda: snap)
-
-        def fake_container_top(cid: str) -> ContainerTop:
-            svc.calls.append(("container_top", cid))
-            return ContainerTop(titles=["PID", "CMD"], processes=[["1", "python"]])
-
-        svc.container_top = fake_container_top  # type: ignore[method-assign]
-        app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await wait_until(lambda: app._get_focused_container() is not None)
-
-            app.action_container_top()
-            # `_live.top_target` is set synchronously (before the threaded fetch
-            # even starts) — wait on the actual fetch call, not the target.
-            await wait_until(lambda: ("container_top", "web") in svc.calls, timeout=2.0)
-            self.assertEqual(app._live.top_target, "web")
-
-            # Pressing `t` again on the same container toggles it off.
-            app.action_container_top()
-            await pilot.pause()
-            self.assertIsNone(app._live.top_target)
-
-    async def test_container_top_guarded_when_not_running(self) -> None:
-        snap = DockerSnapshot([make_container("web", running=False)], [], [], [])
-        app = DockSurfApp(docker=MockDockerService(lambda: snap))
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await wait_until(lambda: app._get_focused_container() is not None)
-
-            app.action_container_top()
-            await pilot.pause()
-            self.assertIsNone(app._live.top_target)
-
-    async def test_selecting_different_container_clears_top(self) -> None:
-        from textual.widgets import DataTable
-
-        from docksurf_py.core.types import TabID
-        from docksurf_py.tui.ids import TableID
-
-        snap = DockerSnapshot(
-            [
-                make_container("web", running=True),
-                make_container("worker", running=True),
-            ],
-            [],
-            [],
-            [],
-        )
-        svc = MockDockerService(lambda: snap)
-        svc.container_top = lambda cid: ContainerTop(  # type: ignore[method-assign]
-            titles=["PID"], processes=[["1"]]
-        )
-        app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await wait_until(
-                lambda: len(app._tables.rows.get(TabID.CONTAINERS, [])) == 2,
-                timeout=2.0,
-            )
-            table = app.query_one(f"#{TableID.CONTAINERS}", DataTable)
-            table.move_cursor(row=0)
-            await pilot.pause()
-
-            app.action_container_top()
-            await wait_until(lambda: app._live.top_target == "web", timeout=2.0)
-
-            table.move_cursor(row=1)
-            # The side state follows the cursor once it settles (debounced).
-            await wait_until(lambda: app._live.top_target is None, timeout=2.0)
-            self.assertIsNone(app._live.top_target)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-GB = 1024**3
-
-
-def _df(*entries: DiskUsageEntry) -> SystemDf:
-    return SystemDf(
-        entries=list(entries),
-        total_size=sum(e.size_bytes for e in entries),
-        total_reclaimable=sum(e.reclaimable_bytes for e in entries),
-    )
-
-
-def _bars(df: SystemDf, width: int = 80) -> list[str]:
-    from rich.console import Console
-
-    console = Console(width=width, no_color=True, highlight=False)
-    with console.capture() as cap:
-        console.print(render_df_bars(df, TIDE_PALETTE, width))
-    return [line.rstrip() for line in cap.get().splitlines()]
 
 
 class RenderDfBarsTests(unittest.TestCase):
