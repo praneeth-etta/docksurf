@@ -4,9 +4,8 @@ import dataclasses
 import unittest
 
 from rich.style import Style
-from textual.theme import BUILTIN_THEMES
 
-from docksurf_py.core.render.palette import ANSI_PALETTE, is_hex
+from docksurf_py.core.render.palette import is_hex
 from docksurf_py.tui.themes import (
     CUSTOM_THEMES,
     DEFAULT_THEME_NAME,
@@ -38,9 +37,5 @@ class PaletteFromThemeTests(unittest.TestCase):
         self.assertEqual(p.muted, "#7a879d")  # the theme's text-muted variable
 
     def test_derived_muted_sits_between_foreground_and_background(self) -> None:
-        p = palette_from_theme(CUSTOM_THEMES[2])  # forest: no text-muted variable
+        p = palette_from_theme(CUSTOM_THEMES[1])  # forest: no text-muted variable
         self.assertNotIn(p.muted, (p.foreground, p.background))
-
-    def test_ansi_themes_get_the_ansi_palette(self) -> None:
-        for name in ("ansi-dark", "ansi-light"):
-            self.assertIs(palette_from_theme(BUILTIN_THEMES[name]), ANSI_PALETTE)

@@ -72,12 +72,12 @@ class SessionPersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             session_file = Path(tmp) / "session.json"
             with patch("docksurf_py.core.session._SESSION_FILE", session_file):
-                save_session(SessionState(theme="docksurf-nightcity"))
+                save_session(SessionState(theme="docksurf-forest"))
 
                 loaded = load_session()
-                self.assertEqual(loaded.theme, "docksurf-nightcity")
+                self.assertEqual(loaded.theme, "docksurf-forest")
                 self.assertEqual(
-                    json.loads(session_file.read_text())["theme"], "docksurf-nightcity"
+                    json.loads(session_file.read_text())["theme"], "docksurf-forest"
                 )
 
     def test_missing_theme_key_defaults_to_none(self) -> None:

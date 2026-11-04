@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Callable, Iterable, Protocol
+from typing import Any, Callable, Iterable, Iterator, Protocol
 
 from textual import events, on
 from textual.app import App, ComposeResult, SystemCommand
@@ -36,6 +36,15 @@ from docksurf_py.core.models import (
 )
 from docksurf_py.core.paths import DATA_DIR
 from docksurf_py.core.render.containers import NAME_WIDTH, age_seconds
+from docksurf_py.core.render.help import (
+    EXTRA_ROWS,
+    IMAGES,
+    NETWORKS,
+    VOLUMES,
+    HelpRow,
+    display_key,
+    scope_for,
+)
 from docksurf_py.core.render.images import (
     CREATED_WIDTH,
     REPO_WIDTH,
@@ -137,6 +146,7 @@ from docksurf_py.tui.themes import (
     CUSTOM_THEMES,
     DEFAULT_THEME_NAME,
     THEME_CYCLE_NAMES,
+    UNSUPPORTED_BUILTIN_THEMES,
     palette_from_theme,
 )
 from docksurf_py.tui.widgets import (
@@ -162,6 +172,19 @@ from docksurf_py.tui.widgets import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def binding_triples(bindings: Iterable[Any]) -> Iterator[tuple[str, str, str]]:
+    """`(key, action, description)` for every entry of a `BINDINGS` list, which
+    mixes `Binding` objects with 2- and 3-tuples (description "" when absent)."""
+    for binding in bindings:
+        if isinstance(binding, Binding):
+            yield binding.key, binding.action, binding.description
+        elif len(binding) == 3:
+            yield binding
+        else:
+            key, action = binding
+            yield key, action, ""
 
 
 def _container_only_actions() -> frozenset[str]:
@@ -407,11 +430,16 @@ class DockSurfApp(
         Binding("E", "exec_custom", "Exec (custom)", show=False),
         ("i", "inspect", "Inspect"),
         ("d", "delete", "Delete"),
-        Binding("l", "view_logs", "Full-view logs", show=False),
-        Binding("f", "follow_logs", "Pause/Resume", show=False),
+        Binding("l", "view_logs", "Full-view logs (toggle)", show=False),
+        Binding("f", "follow_logs", "Follow logs (pause/resume)", show=False),
         Binding("c", "clear_logs", "Clear", show=False),
         Binding("C", "copy_files", "Copy files", show=False),
-        Binding("z", "toggle_side", "Toggle side panels", show=False),
+        Binding(
+            "z",
+            "toggle_side",
+            "Hide/show side panels (detail view when compact)",
+            show=False,
+        ),
         Binding("o", "log_options", "Log options", show=False),
         Binding("T", "toggle_timestamps", "Toggle timestamps", show=False),
         Binding("W", "toggle_log_wrap", "Toggle wrap", show=False),
@@ -423,12 +451,12 @@ class DockSurfApp(
         Binding("ctrl+u", "compose_up", "Compose Up", show=False),
         Binding("ctrl+k", "compose_down", "Compose Down", show=False),
         Binding("B", "rebuild_service", "Rebuild service", show=False),
-        Binding("t", "container_top", "Top", show=False),
+        Binding("t", "container_top", "Container top (processes)", show=False),
         ("space", "toggle_mark", "Mark / Collapse"),
         ("w", "system_df", "Disk usage"),
         ("P", "prune", "Prune"),
         Binding("D", "switch_context", "Docker context", show=False),
-        Binding("escape", "clear_marks", "Clear marks", show=False),
+        Binding("escape", "clear_marks", "Clear marks / go back", show=False),
         Binding("Y", "yank", "Copy to clipboard", show=False),
         Binding("O", "open_port", "Open port in browser", show=False),
         Binding("R", "toggle_secrets", "Reveal/mask secret env vars", show=False),
@@ -449,7 +477,7 @@ class DockSurfApp(
         Binding("v", "network_connect", "Connect to network", show=False),
         Binding("m", "network_disconnect", "Disconnect from network", show=False),
         Binding("F", "cycle_chip", "Cycle status filter", show=False),
-        Binding("M", "cycle_theme", "Theme", show=True),
+        Binding("M", "cycle_theme", "Cycle theme", show=True),
         Binding("~", "show_whale", "Whale", show=True),
     ]
     CSS_PATH = "app.tcss"
@@ -659,6 +687,8 @@ class DockSurfApp(
         self.docker = self._injected_docker
         for theme in CUSTOM_THEMES:
             self.register_theme(theme)
+        for name in UNSUPPORTED_BUILTIN_THEMES:
+            self.unregister_theme(name)
         self.theme = (
             self._session.theme
             if self._session.theme in self.available_themes
@@ -861,8 +891,7 @@ class DockSurfApp(
         self._rerender_active_table()
 
     def action_cycle_theme(self) -> None:
-        """`M`: cycle through the curated DockSurf themes, plus the
-        terminal-native ansi-dark/ansi-light options at the end."""
+        """`M`: cycle through the curated DockSurf themes."""
         names = THEME_CYCLE_NAMES
         idx = names.index(self.theme) if self.theme in names else -1
         next_name = names[(idx + 1) % len(names)]
@@ -883,39 +912,37 @@ class DockSurfApp(
         """
         yield from super().get_system_commands(screen)
         seen_actions: set[str] = set()
-        for binding in self.BINDINGS:
-            if isinstance(binding, Binding):
-                key, action, description = (
-                    binding.key,
-                    binding.action,
-                    binding.description,
-                )
-            elif len(binding) == 3:
-                key, action, description = binding
-            else:
-                key, action = binding
-                description = ""
+        for key, action, description in binding_triples(self.BINDINGS):
             if not description or action in seen_actions:
                 continue
             seen_actions.add(action)
             method = getattr(self, f"action_{action}", None)
             if method is None:
                 continue
-            yield SystemCommand(description, f"Key: {key}", method)
+            yield SystemCommand(description, f"Key: {display_key(key)}", method)
+        # `enter` is handled by the tables, not bound here, so it is listed by hand.
+        yield SystemCommand(
+            "Jump to the related container", "Key: ⏎", self.action_jump_related
+        )
 
     def action_help(self) -> None:
-        self.push_screen(
-            HelpScreen(
-                self.BINDINGS,
-                _container_only_actions(),
-                _compose_actions(),
-                tab_actions={
-                    "Images tab": _tab_actions(ImageActionHandler),
-                    "Volumes tab": _tab_actions(VolumeActionHandler),
-                    "Networks tab": _tab_actions(NetworkActionHandler),
-                },
-            )
-        )
+        self.push_screen(HelpScreen(self._help_rows(), self._view.palette))
+
+    def _help_rows(self) -> list[HelpRow]:
+        """One row per described binding, scoped by the mixin that implements
+        its action, plus the shortcuts that aren't bindings."""
+        container, project = _container_only_actions(), _compose_actions()
+        tabs = {
+            IMAGES: _tab_actions(ImageActionHandler),
+            VOLUMES: _tab_actions(VolumeActionHandler),
+            NETWORKS: _tab_actions(NetworkActionHandler),
+        }
+        rows = [
+            HelpRow(key, description, scope_for(action, container, project, tabs))
+            for key, action, description in binding_triples(self.BINDINGS)
+            if description
+        ]
+        return rows + list(EXTRA_ROWS)
 
     def action_show_whale(self) -> None:
         self.push_screen(WhaleScreen())

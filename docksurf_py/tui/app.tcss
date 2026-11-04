@@ -6,7 +6,6 @@
      2. Overlays & overlays
      3. ConfirmDialog  (migrated from widgets.py DEFAULT_CSS)
      4. LogPane        (migrated from widgets.py DEFAULT_CSS)
-     5. Toast          (ansi-dark/ansi-light contrast fix)
    ========================================================================= */
 
 
@@ -310,34 +309,17 @@ HelpScreen {
     background: $background 60%;
 }
 
-HelpScreen > Vertical {
+/* A `.panel`, like everything else: rounded border, title top-left. */
+HelpScreen > #help-scroll {
     width: 70;
+    max-width: 100%;
     height: 85%;
-    border: double $accent;
-    background: $surface;
-    padding: 1 3;
+    background: $background;
 }
 
-HelpScreen #help-title {
-    text-align: center;
+HelpScreen #help-body {
     width: 100%;
-    margin-bottom: 0;
-    color: $accent;
-    text-style: bold;
-}
-
-HelpScreen VerticalScroll {
-    height: 1fr;
-    border: solid $primary-background-lighten-2;
-}
-
-HelpScreen Static{
-    margin: 1 0;
-}
-
-HelpScreen Button {
-    margin-top: 1;
-    width: 100%;
+    height: auto;
 }
 
 SystemDfScreen {
@@ -616,20 +598,4 @@ ContainerPickerScreen #picker-list {
 
 ContainerPickerScreen Button {
     width: 100%;
-}
-
-Toast:ansi:dark {
-    color: ansi_white;
-}
-
-Toast:ansi:light {
-    color: ansi_black;
-}
-
-Toast:ansi:dark .toast--title {
-    color: ansi_white;
-}
-
-Toast:ansi:light .toast--title {
-    color: ansi_black;
 }

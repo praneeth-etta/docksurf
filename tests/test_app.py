@@ -6,7 +6,6 @@ from typing import Callable
 from unittest.mock import patch
 
 from rich.console import Console
-from rich.table import Table as RichTable
 from textual.app import App
 from textual.content import Content
 from textual.widgets import (
@@ -39,7 +38,6 @@ from docksurf_py.core.models import (
     SystemDf,
     Volume,
 )
-from docksurf_py.core.render.palette import ANSI_PALETTE
 from docksurf_py.core.render.topology import (
     _network_summary,
     network_members,
@@ -49,17 +47,13 @@ from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.types import LogLine, LogOptions, TabID
 from docksurf_py.tui.actions import (
     ContainerActionHandler,
-    ImageActionHandler,
-    NetworkActionHandler,
-    VolumeActionHandler,
     _open_in_browser,
 )
 from docksurf_py.tui.actions.clipboard import _yank_fields
 from docksurf_py.tui.app import (
     DockSurfApp,
-    _compose_actions,
     _container_only_actions,
-    _tab_actions,
+    binding_triples,
 )
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
@@ -616,51 +610,77 @@ class HelpScreenTests(unittest.IsolatedAsyncioTestCase):
         # resource tab -- it must never be classified as container-scoped.
         self.assertNotIn("delete", _container_only_actions())
 
-    async def test_help_screen_rows_match_bindings_with_correct_scope(self) -> None:
+    async def test_help_screen_lists_every_binding_under_its_scope(self) -> None:
         app = DockSurfApp(docker=MockDockerService(lambda: EMPTY_SNAPSHOT))
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(100, 60)) as pilot:
             await pilot.pause()
             app.action_help()
             await pilot.pause()
 
             screen = app.screen_stack[-1]
             self.assertIsInstance(screen, HelpScreen)
-            table = next(
-                w.content
-                for w in screen.query(Static)
-                if isinstance(getattr(w, "content", None), RichTable)
+            body = screen.query_one("#help-body", Static)
+            sections: dict[str, list[str]] = {}
+            scope = ""
+            for line in body.content.plain.split("\n"):
+                if line and not line.startswith(" "):
+                    scope = line
+                    sections[scope] = []
+                elif line.strip():
+                    sections[scope].append(" ".join(line.split()))
+
+            # Every described binding is somewhere on the sheet.
+            everything = " | ".join(" | ".join(v) for v in sections.values())
+            for _key, _action, description in binding_triples(app.BINDINGS):
+                if description:
+                    self.assertIn(description, everything, description)
+
+            def in_scope(scope: str, text: str) -> bool:
+                return any(text in line for line in sections.get(scope, []))
+
+            self.assertTrue(in_scope("Global", "Delete"))  # applies to every tab
+            self.assertTrue(in_scope("Global", "Refresh"))
+            self.assertTrue(in_scope("Global", "Cycle status filter"))
+            self.assertTrue(in_scope("Global", "side panels"))
+            self.assertTrue(in_scope("Containers tab", "Stop"))
+            self.assertTrue(in_scope("Containers tab", "Full-view logs"))
+            self.assertTrue(in_scope("Compose project", "Compose Up"))
+            self.assertTrue(in_scope("Containers tab (logs panel)", "Next log match"))
+            self.assertTrue(in_scope("Containers tab (logs panel)", "Follow logs"))
+            self.assertTrue(in_scope("Images tab", "Tag image"))
+            self.assertTrue(in_scope("Volumes tab", "Volume size on disk"))
+            self.assertTrue(in_scope("Networks tab", "Connect to network"))
+            self.assertTrue(in_scope("Images, Volumes, Networks tabs", "Jump to"))
+            # Sections come in a fixed order, Global first.
+            self.assertEqual(list(sections)[0], "Global")
+            self.assertEqual(
+                [s for s in sections if s.endswith("tab")],
+                ["Containers tab", "Images tab", "Volumes tab", "Networks tab"],
             )
-            rows = list(zip(*(list(c.cells) for c in table.columns)))
 
-            tab_scopes = {
-                "Images tab": _tab_actions(ImageActionHandler),
-                "Volumes tab": _tab_actions(VolumeActionHandler),
-                "Networks tab": _tab_actions(NetworkActionHandler),
-            }
-            for item in app.BINDINGS:
-                if isinstance(item, tuple):
-                    key, action, description = item
-                else:
-                    key, action, description = item.key, item.action, item.description
-                if not description:
-                    continue
-                match = next(r for r in rows if r[1] == description)
-                if action in _compose_actions():
-                    expected_scope = "Compose project"
-                elif action in _container_only_actions():
-                    expected_scope = "Container only"
-                else:
-                    expected_scope = "Global"
-                    for label, actions in tab_scopes.items():
-                        if action in actions:
-                            expected_scope = label
-                            break
-                self.assertEqual(match[2], expected_scope, f"key={key} action={action}")
+    async def test_help_keys_are_shown_the_way_the_hint_bar_shows_them(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(lambda: EMPTY_SNAPSHOT))
+        async with app.run_test(size=(100, 60)) as pilot:
+            await pilot.pause()
+            app.action_help()
+            await pilot.pause()
+            text = app.screen_stack[-1].query_one("#help-body", Static).content.plain
+            self.assertIn("^u", text)
+            self.assertIn("esc", text)
+            self.assertNotIn("ctrl+u", text)
+            self.assertNotIn("plus", text)
 
-            # Regression: the old hand-maintained frozenset mislabeled
-            # "delete" as container-only even though it applies to every tab.
-            delete_row = next(r for r in rows if r[1] == "Delete")
-            self.assertEqual(delete_row[2], "Global")
+    async def test_question_mark_and_escape_close_the_help(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(lambda: EMPTY_SNAPSHOT))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            for key in ("escape", "question_mark"):
+                await pilot.press("question_mark")
+                await pilot.pause()
+                self.assertIsInstance(app.screen_stack[-1], HelpScreen)
+                await pilot.press(key)
+                await pilot.pause()
+                self.assertNotIsInstance(app.screen_stack[-1], HelpScreen)
 
 
 class CommandPaletteTests(unittest.IsolatedAsyncioTestCase):
@@ -678,6 +698,24 @@ class CommandPaletteTests(unittest.IsolatedAsyncioTestCase):
             # Base Textual commands (Theme, Quit, etc.) must still be present.
             self.assertIn("Theme", titles)
             self.assertIn("Quit", titles)
+
+    async def test_lists_the_redesign_actions_with_readable_keys(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(lambda: EMPTY_SNAPSHOT))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            commands = {c.title: c for c in app.get_system_commands(app.screen)}
+            for title in (
+                "Cycle status filter",
+                "Full-view logs (toggle)",
+                "Hide/show side panels (detail view when compact)",
+                "Cycle theme",
+            ):
+                self.assertIn(title, commands)
+            jump = commands["Jump to the related container"]
+            self.assertEqual(jump.callback, app.action_jump_related)
+            self.assertEqual(jump.help, "Key: ⏎")
+            self.assertEqual(commands["Compose Up"].help, "Key: ^u")
+            self.assertEqual(commands["New / Pull"].help, "Key: +")
 
     async def test_command_callback_invokes_the_bound_action(self) -> None:
         app = DockSurfApp(docker=MockDockerService(lambda: EMPTY_SNAPSHOT))
@@ -1378,10 +1416,10 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restores_theme(self) -> None:
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
-        app = DockSurfApp(docker=svc, session=SessionState(theme="docksurf-nightcity"))
+        app = DockSurfApp(docker=svc, session=SessionState(theme="docksurf-forest"))
         async with app.run_test() as pilot:
             await pilot.pause()
-            self.assertEqual(app.theme, "docksurf-nightcity")
+            self.assertEqual(app.theme, "docksurf-forest")
 
     async def test_invalid_theme_falls_back_to_default(self) -> None:
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
@@ -1410,9 +1448,6 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 app._view.palette, palette_from_theme(app.available_themes[app.theme])
             )
-            app.theme = "ansi-dark"
-            await pilot.pause()
-            self.assertIs(app._view.palette, ANSI_PALETTE)
 
     async def test_cycle_theme_key_cycles_and_persists(self) -> None:
         svc = MockDockerService(lambda: EMPTY_SNAPSHOT)
@@ -1426,8 +1461,8 @@ class SessionRestoreTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(app.theme, "docksurf-tide")
                 await pilot.press("M")
                 await pilot.pause()
-                self.assertEqual(app.theme, "docksurf-nightcity")
-                self.assertEqual(app._session.theme, "docksurf-nightcity")
+                self.assertEqual(app.theme, "docksurf-forest")
+                self.assertEqual(app._session.theme, "docksurf-forest")
         save.assert_called()
 
 

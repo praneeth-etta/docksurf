@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from rich.text import Text
 
 from docksurf_py.core.models import (
-    ComposeProject,
     DiskUsageEntry,
     HealthProbe,
     Image,
@@ -35,11 +34,6 @@ from docksurf_py.core.render.images import (
 from docksurf_py.core.render.logs import highlight_match
 from docksurf_py.core.render.markup import (
     format_health_log,
-    health_markup,
-    image_status_markup,
-    project_status_markup,
-    status_color,
-    status_markup,
     truncate,
 )
 from docksurf_py.core.render.observability import (
@@ -48,7 +42,7 @@ from docksurf_py.core.render.observability import (
     split_bar,
 )
 from docksurf_py.core.render.palette import TIDE_PALETTE
-from docksurf_py.core.types import STATUS_GREEN, STATUS_RED, STATUS_YELLOW, SafeMarkup
+from docksurf_py.core.types import SafeMarkup
 from tests.test_compose import make_container
 
 
@@ -66,34 +60,6 @@ class TruncateTests(unittest.TestCase):
         out = truncate("project_postgres_data_volume", 11, middle=True)
         self.assertEqual(out, "proje…olume")
         self.assertEqual(len(out), 11)
-
-
-class StatusMarkupTests(unittest.TestCase):
-    def test_color_follows_state(self) -> None:
-        self.assertEqual(status_color(make_container("a")), STATUS_GREEN)
-        self.assertEqual(status_color(make_container("b", running=False)), STATUS_RED)
-        paused = make_container("c")
-        paused.running, paused.state = False, "paused"
-        self.assertEqual(status_color(paused), STATUS_YELLOW)
-
-    def test_running_health_glyphs(self) -> None:
-        self.assertIn("✓", status_markup(make_container("a", health="healthy")))
-        self.assertIn("✗", status_markup(make_container("a", health="unhealthy")))
-        self.assertIn("…", status_markup(make_container("a", health="starting")))
-
-    def test_nonzero_exit_code_is_shown(self) -> None:
-        c = make_container("a", running=False)
-        c.exit_code = 137
-        self.assertIn("(137)", status_markup(c))
-
-    def test_status_text_is_escaped(self) -> None:
-        c = make_container("a")
-        c.status = "Up [bold]"
-        self.assertIn("\\[bold]", status_markup(c))
-        self.assertIsInstance(status_markup(c), SafeMarkup)
-
-    def test_health_markup_dash_when_no_healthcheck(self) -> None:
-        self.assertEqual(health_markup(make_container("a")), "[dim]—[/]")
 
 
 class FormatHealthLogTests(unittest.TestCase):
@@ -117,23 +83,6 @@ class FormatHealthLogTests(unittest.TestCase):
         assert out is not None
         self.assertIn("[✓ pass]  —\n(no output)", out)
         self.assertIn("[✗ exit 1]  —\nboom", out)
-
-
-class ProjectAndImageMarkupTests(unittest.TestCase):
-    def test_project_summary_counts_running(self) -> None:
-        project = ComposeProject(
-            name="shop",
-            containers=[make_container("a"), make_container("b", running=False)],
-            config_files="",
-            working_dir="",
-        )
-        self.assertEqual(
-            project_status_markup(project), f"[{STATUS_YELLOW}]1/2 running[/]"
-        )
-
-    def test_image_in_use_vs_unused(self) -> None:
-        self.assertIn("In Use", image_status_markup(["web"]))
-        self.assertIn("Unused", image_status_markup([]))
 
 
 class HighlightMatchTests(unittest.TestCase):

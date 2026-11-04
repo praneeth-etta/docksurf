@@ -23,10 +23,6 @@ PRUNE_TARGETS: tuple[str, ...] = (
 )
 
 
-STATUS_GREEN = "green"
-STATUS_RED = "red"
-STATUS_YELLOW = "yellow"
-
 # Palette cycled per service in the aggregated (merged) project log view, so
 # each service's lines are colour-coded like `docker compose logs -f`.
 LOG_SERVICE_COLORS = (
@@ -81,15 +77,3 @@ class SafeMarkup(str):
     Render helpers (DetailPane, _safe_row) will pass SafeMarkup through
     unchanged and escape every plain str they receive.
     """
-
-
-def markup_green(text: str) -> SafeMarkup:
-    return SafeMarkup(f"[{STATUS_GREEN}]{text}[/]")
-
-
-def markup_red(text: str) -> SafeMarkup:
-    return SafeMarkup(f"[{STATUS_RED}]{text}[/]")
-
-
-def markup_yellow(text: str) -> SafeMarkup:
-    return SafeMarkup(f"[{STATUS_YELLOW}]{text}[/]")

@@ -276,16 +276,6 @@ class DockerClient:
         self._last_snapshot = _merge_with_stale(partial, errors, self._last_snapshot)
         return self._last_snapshot
 
-    def fetch_logs(self, container_id: str, tail: int = 500) -> str:
-        if not self._sdk:
-            return "Docker client not initialized"
-        try:
-            container = self._sdk.containers.get(container_id)
-            logs = container.logs(tail=tail, stdout=True, stderr=True)
-            return logs.decode("utf-8", errors="replace").strip()
-        except Exception as e:
-            return f"Error fetching logs: {e}"
-
     def stream_logs(
         self, container_id: str, options: LogOptions | None = None
     ) -> LogStream:

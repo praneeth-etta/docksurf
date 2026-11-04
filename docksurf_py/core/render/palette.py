@@ -17,8 +17,7 @@ _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 @dataclass(frozen=True, slots=True)
 class Palette:
-    """Role -> Rich colour string. Every role is a valid Rich colour: a hex
-    for truecolor themes, an ANSI name for the terminal-native ones."""
+    """Role -> Rich colour string: a `#rrggbb` hex for every role."""
 
     foreground: str  # body text
     strong: str  # bright text (names, selected row)
@@ -47,8 +46,7 @@ def is_hex(color: str) -> bool:
 def blend(fg_hex: str, bg_hex: str, alpha: float) -> str:
     """`fg_hex` over `bg_hex` at `alpha` (0 = all bg, 1 = all fg), as `#rrggbb`.
 
-    Returns `fg_hex` unchanged if either side isn't a hex colour (ANSI themes
-    have no colours to mix).
+    Returns `fg_hex` unchanged if either side isn't a hex colour (nothing to mix).
     """
     if not (is_hex(fg_hex) and is_hex(bg_hex)):
         return fg_hex
@@ -59,6 +57,25 @@ def blend(fg_hex: str, bg_hex: str, alpha: float) -> str:
         b = int(bg_hex[i : i + 2], 16)
         out += f"{round(b + (f - b) * alpha):02x}"
     return out
+
+
+def _luminance(hex_color: str) -> float:
+    """WCAG relative luminance of a `#rrggbb` colour."""
+
+    def linear(channel: int) -> float:
+        c = channel / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+
+
+def contrast_ratio(a: str, b: str) -> float:
+    """WCAG contrast ratio of two `#rrggbb` colours, from 1 (identical) to 21."""
+    if not (is_hex(a) and is_hex(b)):
+        raise ValueError(f"contrast needs hex colours, got {a!r} and {b!r}")
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
 
 
 def _color(p: Palette, role: str) -> str:
@@ -106,23 +123,3 @@ def _tide() -> Palette:
 
 
 TIDE_PALETTE = _tide()
-
-# Terminal-native: named ANSI colours the terminal itself themes. Nothing to
-# blend, so the row backgrounds fall back to the terminal default.
-ANSI_PALETTE = Palette(
-    foreground="default",
-    strong="default",
-    muted="bright_black",
-    faint="bright_black",
-    primary="blue",
-    accent="cyan",
-    secondary="magenta",
-    success="green",
-    warning="yellow",
-    error="red",
-    background="default",
-    surface="default",
-    panel="bright_black",
-    cursor_bg="default",
-    marked_bg="default",
-)

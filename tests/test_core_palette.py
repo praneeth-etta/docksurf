@@ -5,10 +5,9 @@ import unittest
 
 from docksurf_py.core.render.markup import rollup_dots, state_cell, state_glyph
 from docksurf_py.core.render.palette import (
-    ANSI_PALETTE,
-    ROLES,
     TIDE_PALETTE,
     blend,
+    contrast_ratio,
     fg,
     is_hex,
     key_chip,
@@ -67,11 +66,6 @@ class PaletteTests(unittest.TestCase):
         for f in dataclasses.fields(TIDE_PALETTE):
             self.assertTrue(is_hex(getattr(TIDE_PALETTE, f.name)), f.name)
 
-    def test_ansi_has_no_hex_and_same_roles(self) -> None:
-        self.assertEqual({f.name for f in dataclasses.fields(ANSI_PALETTE)}, set(ROLES))
-        for f in dataclasses.fields(ANSI_PALETTE):
-            self.assertFalse(is_hex(getattr(ANSI_PALETTE, f.name)), f.name)
-
     def test_tide_row_backgrounds_are_tints_of_the_ground(self) -> None:
         self.assertNotEqual(TIDE_PALETTE.cursor_bg, TIDE_PALETTE.background)
         self.assertNotEqual(TIDE_PALETTE.marked_bg, TIDE_PALETTE.background)
@@ -85,5 +79,20 @@ class RenderersUsePaletteTests(unittest.TestCase):
             self.assertIn(p.success, out)
             self.assertNotIn("[green]", out)
 
-    def test_ansi_palette_passes_names_through(self) -> None:
-        self.assertIn("[green]", state_glyph(make_container("a"), ANSI_PALETTE))
+
+class ContrastRatioTests(unittest.TestCase):
+    def test_black_on_white_is_21(self) -> None:
+        self.assertAlmostEqual(contrast_ratio("#000000", "#ffffff"), 21.0)
+
+    def test_identical_colours_are_1_and_order_does_not_matter(self) -> None:
+        self.assertAlmostEqual(contrast_ratio("#336699", "#336699"), 1.0)
+        a, b = "#7aa2f7", "#0b0e14"
+        self.assertEqual(contrast_ratio(a, b), contrast_ratio(b, a))
+
+    def test_known_midpoint(self) -> None:
+        # #767676 on white is the textbook 4.54:1 (just passes AA).
+        self.assertAlmostEqual(contrast_ratio("#767676", "#ffffff"), 4.54, places=2)
+
+    def test_non_hex_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            contrast_ratio("red", "#ffffff")

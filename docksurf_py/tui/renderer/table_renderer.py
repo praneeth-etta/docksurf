@@ -46,9 +46,6 @@ from docksurf_py.tui.widgets.tables import ResourceTable
 if TYPE_CHECKING:
     from docksurf_py.tui.app import ResourceEntry
 
-# Max chars shown in an image repository / volume name cell.
-NAME_MAX_CHARS = 30
-
 
 def _safe_row(table: DataTable, *values) -> None:
     """Add a row, escaping plain strings and passing SafeMarkup through unchanged."""
@@ -254,10 +251,6 @@ class TableRenderer(_Base):
             )
         self._finish_populate(TabID.NETWORKS, table, rows)
 
-    def _mark_cell(self, tab_id: TabID, item: object) -> SafeMarkup | str:
-        """Leading-column cell for a row: the mark glyph if marked, else blank."""
-        return MARK_GLYPH if self._tables.is_marked(tab_id, row_key(item)) else ""
-
     def _gutter_cell(
         self, tab_id: TabID, item: object, is_cursor: bool
     ) -> SafeMarkup | str:
@@ -278,8 +271,8 @@ class TableRenderer(_Base):
         return MARK_GLYPH if marked else ""
 
     def _row_tint(self, tab_id: TabID, item: object) -> Style | None:
-        """Background for a header (`surface`) or marked (`marked_bg`) row;
-        None on terminal-native themes, which have no colours to tint with."""
+        """Background for a header (`surface`) or marked (`marked_bg`) row,
+        None for an ordinary row."""
         p = self._view.palette
         if isinstance(item, (ComposeProject, RowGroup)):
             colour = p.surface
@@ -287,7 +280,7 @@ class TableRenderer(_Base):
             colour = p.marked_bg
         else:
             return None
-        return None if colour == "default" else Style(bgcolor=colour)
+        return Style(bgcolor=colour)
 
     def _finish_populate(self, tab_id: TabID, table: DataTable, rows: list) -> None:
         """After a populate: row tints, and the cursor gutter on the row the

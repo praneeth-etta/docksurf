@@ -25,6 +25,7 @@ from docksurf_py.tui.ids import (
     LIVE_PANEL_ID,
     TableID,
 )
+from docksurf_py.tui.themes import THEME_CYCLE_NAMES
 from docksurf_py.tui.widgets import ChipBar, DetailPane, LivePanel
 from docksurf_py.tui.widgets.tables import ResourceTable
 from tests.test_app import MockDockerService, wait_until
@@ -308,14 +309,14 @@ class DetailCardTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("STOPPED", _body_text(pane))
             self.assertIsNone(pane.section("top"))
 
-    async def test_card_title_renders_on_terminal_native_themes(self) -> None:
+    async def test_card_title_renders_on_every_theme(self) -> None:
         app = DockSurfApp(docker=_card_service(_card_snapshot()))
         async with app.run_test(size=(160, 40)) as pilot:
-            app.theme = "ansi-dark"
-            await pilot.pause()
             pane = await self._select(app, pilot, "shop-web-1")
-            await pilot.pause()
-            self.assertIn("shop-web-1", str(pane.border_title))
+            for name in THEME_CYCLE_NAMES:
+                app.theme = name
+                await pilot.pause()
+                self.assertIn("shop-web-1", str(pane.border_title), name)
 
 
 class _SampleStream:

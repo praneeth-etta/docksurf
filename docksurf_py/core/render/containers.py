@@ -45,10 +45,6 @@ _WORD_COUNT = {"a": 1, "an": 1}
 _NO_VALUE = "—"
 
 
-def _dash(p: Palette) -> SafeMarkup:
-    return fg(p, "faint", _NO_VALUE)
-
-
 def parse_age(status: str) -> tuple[int, str] | None:
     """`(seconds, compact text)` from a summary `Status` such as
     `Up 3 hours (healthy)` or `Exited (137) 14 minutes ago`, or None when the

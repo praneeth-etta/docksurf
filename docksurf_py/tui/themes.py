@@ -3,7 +3,7 @@
 from textual.color import Color
 from textual.theme import Theme
 
-from docksurf_py.core.render.palette import ANSI_PALETTE, Palette, blend
+from docksurf_py.core.render.palette import Palette, blend
 
 # Close to Textual's built-in `tokyo-night`; the brand accent (#2EE6C8) and the
 # darker ground keep it distinct.
@@ -29,42 +29,6 @@ DOCKSURF_TIDE = Theme(
     },
 )
 
-DOCKSURF_NIGHTCITY = Theme(
-    name="docksurf-nightcity",
-    primary="#2B2D2DFF",
-    secondary="#4A4159",
-    accent="#3D5B5E",
-    foreground="#E4DCF5",
-    background="#0D0C0D",
-    surface="#3F2C3E",
-    panel="#141317",
-    success="#639B65",
-    warning="#B0916F",
-    error="#B35959",
-    dark=True,
-    variables={
-        "scrollbar-background": "#221E24",
-        "scrollbar": "#6E6178",
-        "scrollbar-hover": "#8A7B94",
-        "scrollbar-active": "#B3A3C2",
-    },
-)
-
-DOCKSURF_LINEN = Theme(
-    name="docksurf-linen",
-    primary="#A6875D",
-    secondary="#6E6A63",
-    accent="#8C6239",
-    foreground="#2A241C",
-    background="#F6F3EC",
-    surface="#EDE6D8",
-    panel="#E2D9C6",
-    success="#3F6B3F",
-    warning="#8A5A2E",
-    error="#8B3A3A",
-    dark=False,
-)
-
 DOCKSURF_FOREST = Theme(
     name="docksurf-forest",
     primary="#4CAF7D",
@@ -78,21 +42,9 @@ DOCKSURF_FOREST = Theme(
     warning="#F2A65A",
     error="#E85D5D",
     dark=True,
-)
-
-DOCKSURF_SAKURA = Theme(
-    name="docksurf-sakura",
-    primary="#E7B6C3",
-    secondary="#5B4B8A",
-    accent="#A0A7BA",
-    foreground="#2B1B22",
-    background="#FBCAD7",
-    surface="#F3E4E9",
-    panel="#ECD8DF",
-    success="#1B7A43",
-    warning="#C9A27F",
-    error="#A31D1D",
-    dark=False,
+    # Without these Textual makes `$border` the primary colour, so a focused
+    # panel would look like every other one.
+    variables={"border": "#1A3A2A", "border-blurred": "#1A3A2A"},
 )
 
 DOCKSURF_ABYSS = Theme(
@@ -102,30 +54,24 @@ DOCKSURF_ABYSS = Theme(
     accent="#F03DAE",
     foreground="#C9D9E8",
     background="#03050A",
-    surface="#080D16",
+    surface="#0B111C",
     panel="#0D1420",
     success="#3FC7D9",
     warning="#B5C23D",
     error="#C6634A",
     dark=True,
+    variables={"border": "#1D2E42", "border-blurred": "#1D2E42"},
 )
 
-CUSTOM_THEMES = [
-    DOCKSURF_TIDE,
-    DOCKSURF_NIGHTCITY,
-    DOCKSURF_LINEN,
-    DOCKSURF_FOREST,
-    DOCKSURF_SAKURA,
-    DOCKSURF_ABYSS,
-]
+CUSTOM_THEMES = [DOCKSURF_TIDE, DOCKSURF_FOREST, DOCKSURF_ABYSS]
 
 DEFAULT_THEME_NAME = DOCKSURF_TIDE.name
 
-TERMINAL_NATIVE_THEME_NAMES = ["ansi-dark", "ansi-light"]
+THEME_CYCLE_NAMES = [theme.name for theme in CUSTOM_THEMES]
 
-THEME_CYCLE_NAMES = [
-    theme.name for theme in CUSTOM_THEMES
-] + TERMINAL_NATIVE_THEME_NAMES
+# Textual built-ins the palette can't be derived from: their colours are
+# `ansi_*` names, which parse to black. Unregistered so `^p` doesn't offer them.
+UNSUPPORTED_BUILTIN_THEMES = ("ansi-dark", "ansi-light")
 
 
 def _h(color: Color) -> str:
@@ -137,12 +83,8 @@ def _hex(color: str | None, fallback: str) -> str:
 
 
 def palette_from_theme(theme: Theme) -> Palette:
-    """The core `Palette` for a Textual theme. Terminal-native themes get
-    named ANSI colours (the terminal does the theming); the rest get hex
-    colours, with `muted`/`faint` derived the way Textual derives
-    `$text-muted`."""
-    if theme.name in TERMINAL_NATIVE_THEME_NAMES:
-        return ANSI_PALETTE
+    """The core `Palette` for a Textual theme: hex colours, with `muted`/`faint`
+    derived the way Textual derives `$text-muted` when the theme has none."""
     background = _hex(theme.background, "#0b0e14" if theme.dark else "#ffffff")
     foreground = _hex(theme.foreground, "#cdd6e4" if theme.dark else "#1a1a1a")
     fg_color = Color.parse(foreground)
