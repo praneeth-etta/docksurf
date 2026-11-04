@@ -7,6 +7,7 @@ into DockSurfApp; the text itself comes from `core.render.chrome`.
 from typing import TYPE_CHECKING
 
 from rich.text import Text
+from textual.geometry import Size
 from textual.widgets import TabbedContent
 
 from docksurf_py.core.models import ComposeProject, Container, Image, Network, Volume
@@ -16,6 +17,7 @@ from docksurf_py.core.render.chrome import (
     RowKind,
     bottom_bar,
     chip_bar,
+    compact_list_title,
     global_counts,
     key_hints,
     list_title,
@@ -32,7 +34,7 @@ from docksurf_py.core.render.volumes import (
     volumes_toolbar_line,
 )
 from docksurf_py.core.state.navigation import related_containers
-from docksurf_py.core.state.status import RunState, classify
+from docksurf_py.core.state.status import RunState, classify, partition_counts
 from docksurf_py.core.state.tables import RowGroup
 from docksurf_py.core.state.view import LayoutMode
 from docksurf_py.core.types import SafeMarkup, TabID
@@ -79,6 +81,24 @@ class ChromeController(_Base):
         self._repaint_list_panel()
         self._repaint_disk_panel()
 
+    def _apply_layout(self, size: Size | None = None) -> None:
+        """Adopt the layout for a terminal size (default: the current one).
+        Runs on mount and on every resize; does nothing unless the mode flips.
+        A Resize handler passes the event's size, since `self.size` can still
+        be the old one then. The class goes on the app, not `self.screen`,
+        which may be a modal."""
+        size = size or self.size
+        if not self._view.resize(size.width, size.height):
+            return
+        self.set_class(self._view.layout is LayoutMode.COMPACT, "-compact")
+        if not self.is_running:
+            return
+        self._rebuild_columns()
+        self._sync_filter_row()
+        self._sync_log_layout()
+        self._retarget_side()  # stops or starts the streams only the side shows
+        self._repaint_chrome()
+
     def action_toggle_side(self) -> None:
         """`z`: hide or show the side column, so the list takes the full width.
         The streams that only the side column shows stop while it is hidden."""
@@ -88,6 +108,17 @@ class ChromeController(_Base):
         self._sync_log_layout()
         self._retarget_side()
         self._repaint_chrome()
+
+    def _sync_filter_row(self) -> None:
+        """Compact hides the filter row to save a row; it comes back while the
+        filter has focus or a query is active, so the filter is never invisible.
+        (`-filtering` only matters to the stylesheet in compact mode.)"""
+        if not self.is_running or not self.screen_stack:
+            return  # a focus event dispatched during teardown
+        # Focus also moves inside modals, where `query_one` would search the
+        # modal; the filter lives on the base screen.
+        bar = self.screen_stack[0].query_one(f"#{SEARCH_BAR_ID}", SearchBar)
+        self.set_class(bar.has_focus or bool(bar.value), "-filtering")
 
     def _repaint_top_bar(self) -> None:
         if not self.is_running:
@@ -121,6 +152,7 @@ class ChromeController(_Base):
         view = self._view
         message = view.connection_message if view.connection == "offline" else ""
         palette = view.palette
+        compact = view.layout is LayoutMode.COMPACT
         self.query_one(f"#{BOTTOM_BAR_ID}", BottomBar).set_builder(
             lambda width: bottom_bar(
                 hints,
@@ -129,6 +161,7 @@ class ChromeController(_Base):
                 width=width,
                 message=message,
                 global_hints=() if ctx.filtering else GLOBAL_HINTS,
+                compact=compact,
             )
         )
 
@@ -149,13 +182,20 @@ class ChromeController(_Base):
             if self.snapshot is not None
             else shown
         )
-        panel.border_title = list_title(
-            active,
-            shown,
-            self._tables.sort(active),
-            grouped=entry.kind.groups_by_project or entry.kind.grouped_by,
-            total=total,
-        )
+        if self._view.layout is LayoutMode.COMPACT:
+            up = failed = None
+            if active == TabID.CONTAINERS:
+                shown_containers = [r for r in rows if isinstance(r, Container)]
+                up, _down, failed = partition_counts(shown_containers)
+            panel.border_title = compact_list_title(active, shown, up, failed or 0)
+        else:
+            panel.border_title = list_title(
+                active,
+                shown,
+                self._tables.sort(active),
+                grouped=entry.kind.groups_by_project or entry.kind.grouped_by,
+                total=total,
+            )
         search_bar = self.query_one(f"#{SEARCH_BAR_ID}", SearchBar)
         search_bar.placeholder = FILTER_PLACEHOLDERS[active]
         self._repaint_chip_bar(active, search_bar.value)
@@ -170,10 +210,20 @@ class ChromeController(_Base):
         active = TabID(self.query_one(TabbedContent).active)
         build = self._resource_registry[active].footer
         panel = self.query_one(f"#{LIST_PANEL_ID}")
+        marked = self._marked_items(active)
+        if self._view.layout is LayoutMode.COMPACT:
+            # Room for one short note: the marked summary, else how to see more.
+            if build is not None and marked:
+                panel.border_subtitle = Text.from_markup(build(marked))
+            else:
+                panel.border_subtitle = Text.from_markup(
+                    f"{fg(self._view.palette, 'strong', 'z')} "
+                    f"{fg(self._view.palette, 'muted', 'detail')}"
+                )
+            return
         if build is None:
             panel.border_subtitle = ""
             return
-        marked = self._marked_items(active)
         panel.border_subtitle = Text.from_markup(build(marked))
 
     def _images_footer(self, marked: list[Image]) -> SafeMarkup:
@@ -186,7 +236,12 @@ class ChromeController(_Base):
         active = TabID(self.query_one(TabbedContent).active)
         build = self._resource_registry[active].toolbar_line
         line = self.query_one(f"#{TOOLBAR_LINE_ID}", ToolbarLine)
-        line.display = build is not None and self.snapshot is not None
+        # The summary line is wide-only: 80x24 has no spare row for it.
+        line.display = (
+            build is not None
+            and self.snapshot is not None
+            and self._view.layout is not LayoutMode.COMPACT
+        )
         if build is not None:
             line.set_builder(build)
 

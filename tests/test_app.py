@@ -2588,7 +2588,7 @@ class ColumnSortTests(unittest.IsolatedAsyncioTestCase):
         app = DockSurfApp(
             docker=MockDockerService(lambda: DockerSnapshot([], images, [], []))
         )
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(160, 40)) as pilot:
             await pilot.pause()
             app.query_one(TabbedContent).active = TabID.IMAGES
             await pilot.pause()

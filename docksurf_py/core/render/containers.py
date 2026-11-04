@@ -64,13 +64,16 @@ def parse_age(status: str) -> tuple[int, str] | None:
     return count * per, f"{count}{suffix}"
 
 
-def compact_age(status: str, uptime_hint: str = "") -> str:
-    """`3h` for a running container, `14m ago` for a stopped one. The summary
-    carries no finished-at timestamp, so the status text is the only source
-    without an inspect. Falls back to `uptime_hint`, then `—`."""
+def compact_age(status: str, uptime_hint: str = "", compact: bool = False) -> str:
+    """`3h` for a running container, `14m ago` for a stopped one (`14m` with
+    `compact=True`, for the narrow layout). The summary carries no finished-at
+    timestamp, so the status text is the only source without an inspect.
+    Falls back to `uptime_hint`, then `—`."""
     parsed = parse_age(status)
     if parsed is not None:
-        return parsed[1] if status.startswith("Up") else f"{parsed[1]} ago"
+        if status.startswith("Up") or compact:
+            return parsed[1]
+        return f"{parsed[1]} ago"
     parsed = parse_age(uptime_hint)
     return parsed[1] if parsed is not None else _NO_VALUE
 
@@ -146,6 +149,7 @@ def container_row_cells(
     *,
     branch: str | None,
     p: Palette,
+    compact: bool = False,
 ) -> tuple[SafeMarkup, ...]:
     """The five non-gutter cells: name, state, uptime, ports, image.
     `branch` is the tree connector (`├─`/`└─`) for a Compose service row."""
@@ -159,19 +163,22 @@ def container_row_cells(
     return (
         name,
         state_cell(c, p),
-        fg(p, "muted", compact_age(c.status, c.uptime_hint)),
+        fg(p, "muted", compact_age(c.status, c.uptime_hint, compact)),
         fg(p, "muted" if ports != _NO_VALUE else "faint", ports),
         fg(p, "muted", c.image_name),
     )
 
 
-def project_row_cells(project: ComposeProject, p: Palette) -> tuple[SafeMarkup, ...]:
+def project_row_cells(
+    project: ComposeProject, p: Palette, compact: bool = False
+) -> tuple[SafeMarkup, ...]:
     """Five cells for a Compose header row. The collapse chevron is the
-    gutter's job (`chevron`)."""
+    gutter's job (`chevron`). `compact` drops the `2/7 up` text, leaving the
+    dots."""
     blank = SafeMarkup("")
     return (
         SafeMarkup(f"[bold {p.strong}]{escape(truncate(project.name, NAME_WIDTH))}[/]"),
-        rollup_dots(project.containers, p),
+        rollup_dots(project.containers, p, with_count=not compact),
         blank,
         blank,
         fg(p, "muted", project_location(project)),

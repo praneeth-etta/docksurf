@@ -33,6 +33,26 @@ BottomBar {
     padding: 1 1 0 1;
 }
 
+/* ---- Compact (80x24): see 06-compact. Every row counts. ---------------- */
+
+.-compact BottomBar {
+    height: 2;
+}
+
+.-compact #main-container {
+    padding: 0 1;
+}
+
+/* The filter row is hidden until `/` or an active query shows it. */
+.-compact #list-toolbar {
+    display: none;
+}
+
+.-compact.-filtering #list-toolbar {
+    display: block;
+}
+
+
 .panel {
     border: round $border;
     border-title-color: $text-muted;

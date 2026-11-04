@@ -35,6 +35,11 @@ class CompactAgeTests(unittest.TestCase):
         for status, expected in cases.items():
             self.assertEqual(compact_age(status), expected, status)
 
+    def test_compact_drops_the_ago_suffix(self) -> None:
+        self.assertEqual(compact_age("Exited (137) 14 minutes ago", "", True), "14m")
+        self.assertEqual(compact_age("Up 3 hours", "", True), "3h")
+        self.assertEqual(compact_age("Created", "", True), "—")
+
     def test_falls_back_to_uptime_hint(self) -> None:
         self.assertEqual(compact_age("running", "5 minutes"), "5m")
         self.assertEqual(compact_age("running", ""), "—")
@@ -145,6 +150,24 @@ class RowCellsTests(unittest.TestCase):
         self.assertIn("p", cells[0])
         self.assertIn("1/2 up", cells[1])
         self.assertIn("/srv/p", cells[4])
+
+    def test_compact_project_row_drops_the_count_text(self) -> None:
+        a = make_container("a", project="p", service="a")
+        b = make_container("b", running=False, project="p", service="b")
+        project = ComposeProject("p", [a, b], "", "")
+        self.assertIn("1/2 up", project_row_cells(project, P)[1])
+        compact = project_row_cells(project, P, compact=True)
+        self.assertEqual(len(compact), 5)
+        self.assertNotIn("up", compact[1])
+        self.assertIn("●", compact[1])
+
+    def test_compact_container_row_shortens_the_age(self) -> None:
+        c = make_container("x", running=False)
+        c.status = "Exited (0) 14 minutes ago"
+        self.assertIn("14m ago", container_row_cells(c, branch=None, p=P)[2])
+        cells = container_row_cells(c, branch=None, p=P, compact=True)
+        self.assertIn("14m", cells[2])
+        self.assertNotIn("ago", cells[2])
 
     def test_chevron(self) -> None:
         self.assertIn("▸", chevron(True, P))

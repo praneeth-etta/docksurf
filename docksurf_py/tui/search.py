@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from textual.timer import Timer
 from textual.widgets import DataTable, Input, TabbedContent
 
+from docksurf_py.core.state.view import LayoutMode
 from docksurf_py.core.types import TabID
 from docksurf_py.tui.ids import SEARCH_BAR_ID
 
@@ -37,7 +38,14 @@ class ResourceSearchController(_Base):
     _search_filter_timer: Timer | None = None
 
     def action_open_search(self) -> None:
-        self.query_one(f"#{SEARCH_BAR_ID}", Input).focus()
+        bar = self.query_one(f"#{SEARCH_BAR_ID}", Input)
+        if self._view.layout is LayoutMode.COMPACT:
+            # The row is hidden until `-filtering` shows it; a hidden input
+            # can't take focus, so wait for the restyle.
+            self.set_class(True, "-filtering")
+            self.call_after_refresh(bar.focus)
+            return
+        bar.focus()
 
     def action_cycle_chip(self) -> None:
         """`F`: next status chip on the active tab (wraps back to `all`)."""

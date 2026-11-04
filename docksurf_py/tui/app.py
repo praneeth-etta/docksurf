@@ -16,6 +16,7 @@ from textual import events, on
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.geometry import Size
 from textual.screen import Screen
 from textual.theme import Theme
 from textual.widgets import (
@@ -227,6 +228,14 @@ class ResourceEntry:
     right_columns: frozenset[str] = frozenset()
     # One-line summary above the filter row, built for a width (None: no line).
     toolbar_line: Callable[[int], SafeMarkup] | None = None
+    # The subset of `columns` the compact layout shows (None: all of them).
+    compact_columns: tuple[str, ...] | None = None
+
+    def visible_columns(self, compact: bool) -> tuple[str, ...]:
+        """The columns on screen for a layout, in `columns` order."""
+        if not compact or self.compact_columns is None:
+            return self.columns
+        return tuple(c for c in self.columns if c in self.compact_columns)
 
     @property
     def label(self) -> str:
@@ -263,6 +272,9 @@ class AppContext(Protocol):
     theme: str  # really a textual.app.App reactive
 
     def start_refresh(self) -> None: ...
+    def _apply_layout(self, size: Size | None = None) -> None: ...
+    def _rebuild_columns(self) -> None: ...
+    def _sync_filter_row(self) -> None: ...
     def _repaint_chrome(self) -> None: ...
     def _repaint_top_bar(self) -> None: ...
     def _repaint_bottom_bar(self) -> None: ...
@@ -329,6 +341,11 @@ class AppContext(Protocol):
     # MRO includes both `App` and (fictitiously, TYPE_CHECKING-only) this
     # protocol, so mypy requires these stubs to be valid *overrides* of
     # App's real signatures — hence maximally loose rather than precise.
+    size: Size
+    screen_stack: list[Any]
+
+    def set_class(self, *args: Any, **kwargs: Any) -> Any: ...
+    def call_after_refresh(self, *args: Any, **kwargs: Any) -> Any: ...
     def notify(self, *args: Any, **kwargs: Any) -> Any: ...
     def query_one(self, *args: Any, **kwargs: Any) -> Any: ...
     def call_from_thread(self, *args: Any, **kwargs: Any) -> Any: ...
@@ -474,6 +491,7 @@ class DockSurfApp(
                 ),
                 table_id=TableID.CONTAINERS,
                 columns=("Name", "State", "Uptime", "Ports", "Image"),
+                compact_columns=("Name", "State", "Uptime"),
                 populate=self._populate_container_table,
                 show_details=self._show_container_details,
                 column_widths={
@@ -501,6 +519,7 @@ class DockSurfApp(
                 ),
                 table_id=TableID.IMAGES,
                 columns=("Repository", "Tag", "Size", "Created", "Status"),
+                compact_columns=("Repository", "Size", "Status"),
                 populate=self._populate_image_table,
                 show_details=self._show_image_details,
                 column_widths={
@@ -533,6 +552,7 @@ class DockSurfApp(
                 ),
                 table_id=TableID.VOLUMES,
                 columns=("Name", "Project", "Driver", "Size", "Used by"),
+                compact_columns=("Name", "Size", "Used by"),
                 populate=self._populate_volume_table,
                 show_details=self._show_volume_details,
                 column_widths={
@@ -563,6 +583,7 @@ class DockSurfApp(
                 ),
                 table_id=TableID.NETWORKS,
                 columns=("Name", "Driver", "Scope", "Subnet", "Containers"),
+                compact_columns=("Name", "Containers"),
                 populate=self._populate_network_table,
                 show_details=self._show_network_details,
                 column_widths={
@@ -655,11 +676,17 @@ class DockSurfApp(
         # Any connection failure is surfaced from SnapshotManager once that
         # first fetch comes back.
         self.setup_tables()
+        self._apply_layout()
         self._sync_log_layout()
         self._repaint_chrome()
         self.start_refresh()
         # Live: react to `docker events` so the tables stay current without `r`.
         self.start_event_listener()
+
+    def on_resize(self, event: events.Resize) -> None:
+        # The first Resize can land before `on_mount`; that runs its own check.
+        if hasattr(self, "docker"):
+            self._apply_layout(event.size)
 
     def on_unmount(self) -> None:
         self.stop_event_listener()
@@ -803,6 +830,7 @@ class DockSurfApp(
     def _on_focus_moved(self) -> None:
         # The bottom bar shows filter hints while the filter input has focus.
         self._repaint_bottom_bar()
+        self._sync_filter_row()
 
     @on(SearchBar.Dismissed)
     def _on_search_dismissed(self) -> None:

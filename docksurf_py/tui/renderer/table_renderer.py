@@ -14,6 +14,7 @@ from docksurf_py.core.models import (
     Network,
     Volume,
 )
+from docksurf_py.core.render.columns import select_cells
 from docksurf_py.core.render.containers import (
     chevron,
     container_row_cells,
@@ -28,6 +29,7 @@ from docksurf_py.core.render.palette import fg
 from docksurf_py.core.render.volumes import volume_group_cells, volume_row_cells
 from docksurf_py.core.session import save_session
 from docksurf_py.core.state.tables import ALL_CHIP, RowGroup, TablesState, row_key
+from docksurf_py.core.state.view import LayoutMode
 from docksurf_py.core.types import (
     SafeMarkup,
     TabID,
@@ -90,7 +92,7 @@ class TableRenderer(_Base):
         # columns) so every populate method just prepends one cell per row.
         table.add_column("", width=2)
         sort_state = self._tables.sort(tab_id)
-        for col in entry.columns:
+        for col in entry.visible_columns(self._compact):
             label = col
             if sort_state is not None and sort_state[0] == col:
                 label = f"{col} {'▼' if sort_state[1] else '▲'}"
@@ -98,6 +100,32 @@ class TableRenderer(_Base):
             if col in entry.right_columns and width:
                 label = label.rjust(width)
             table.add_column(label, width=width)
+
+    @property
+    def _compact(self) -> bool:
+        return self._view.layout is LayoutMode.COMPACT
+
+    def _cells(self, tab_id: TabID, cells: tuple) -> tuple:
+        """The cells of a full row that the current layout shows."""
+        entry = self._resource_registry[tab_id]
+        return select_cells(entry.visible_columns(self._compact), entry.columns, cells)
+
+    def _rebuild_columns(self) -> None:
+        """The layout flipped: give every table the new column set. The active
+        tab repopulates now (keeping the cursor row), the others when next
+        shown, the same way a theme change does."""
+        active = self.query_one(TabbedContent).active
+        # Clearing the columns resets the cursor, so read the focused row first.
+        focus_key = self._focused_row_key(active)
+        for tab_id, entry in self._resource_registry.items():
+            table = self.query_one(f"#{entry.table_id}", DataTable)
+            table.clear(columns=True)
+            self._add_table_columns(table, tab_id, entry)
+        if not self.is_running or not self.snapshot:
+            return  # the first populate will use the new columns
+        self._tables.dirty |= {tab for tab in TabID if tab != active}
+        self._rerender_active_table()
+        self._restore_selection(active, focus_key)
 
     def _on_header_selected(self, event: DataTable.HeaderSelected) -> None:
         """Handle a header click and toggle that column's sort.
@@ -116,7 +144,7 @@ class TableRenderer(_Base):
         # Column 0 is the leading mark-glyph column — not sortable.
         if event.column_index == 0:
             return
-        col_name = entry.columns[event.column_index - 1]
+        col_name = entry.visible_columns(self._compact)[event.column_index - 1]
         new_sort = self._tables.cycle_sort(active, col_name)
         if new_sort is None:
             return
@@ -139,13 +167,19 @@ class TableRenderer(_Base):
         for row in rows:
             if isinstance(row, ComposeProject):
                 project = row
-                cells = project_row_cells(row, p)
+                cells = project_row_cells(row, p, self._compact)
             else:
                 branch = None
                 if row.is_compose and project is not None:
                     branch = "└─" if row is project.containers[-1] else "├─"
-                cells = container_row_cells(row, branch=branch, p=p)
-            _safe_row(table, self._gutter_cell(TabID.CONTAINERS, row, False), *cells)
+                cells = container_row_cells(
+                    row, branch=branch, p=p, compact=self._compact
+                )
+            _safe_row(
+                table,
+                self._gutter_cell(TabID.CONTAINERS, row, False),
+                *self._cells(TabID.CONTAINERS, cells),
+            )
         self._finish_populate(TabID.CONTAINERS, table, rows)
 
     def _rerender_active_table(self) -> None:
@@ -177,7 +211,7 @@ class TableRenderer(_Base):
             _safe_row(
                 table,
                 self._gutter_cell(TabID.IMAGES, i, False),
-                *image_row_cells(i, self._view.palette),
+                *self._cells(TabID.IMAGES, image_row_cells(i, self._view.palette)),
             )
         self._finish_populate(TabID.IMAGES, table, rows)
 
@@ -193,7 +227,11 @@ class TableRenderer(_Base):
                 cells = volume_group_cells(row, self._details.volume_sizes, p)
             else:
                 cells = volume_row_cells(row, self._details.volume_size(row.name), p)
-            _safe_row(table, self._gutter_cell(TabID.VOLUMES, row, False), *cells)
+            _safe_row(
+                table,
+                self._gutter_cell(TabID.VOLUMES, row, False),
+                *self._cells(TabID.VOLUMES, cells),
+            )
         self._finish_populate(TabID.VOLUMES, table, rows)
 
     def _populate_network_table(
@@ -206,13 +244,13 @@ class TableRenderer(_Base):
                 _safe_row(
                     table,
                     self._gutter_cell(TabID.NETWORKS, n, False),
-                    *network_group_cells(n, p),
+                    *self._cells(TabID.NETWORKS, network_group_cells(n, p)),
                 )
                 continue
             _safe_row(
                 table,
                 self._gutter_cell(TabID.NETWORKS, n, False),
-                *network_row_cells(n, containers, p),
+                *self._cells(TabID.NETWORKS, network_row_cells(n, containers, p)),
             )
         self._finish_populate(TabID.NETWORKS, table, rows)
 

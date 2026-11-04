@@ -483,7 +483,7 @@ class ContainerActionHandler(_Base):
             return False
         if self._view.logs_full:
             return True
-        return self.config.side_logs and not self._view.side_hidden
+        return self.config.side_logs and self._view.side_visible
 
     def _sync_log_layout(self) -> None:
         """Show/hide the log panel and the panels around it for the current
@@ -496,11 +496,12 @@ class ContainerActionHandler(_Base):
         log_pane.display = self._logs_wanted()
         log_pane.set_expanded(full)
         self.query_one(f"#{SIDE_COLUMN_ID}").set_class(full, "logs-full")
-        self.query_one(f"#{LIST_PANEL_ID}").display = not full
-        # `z` hides the whole side column, but full-view logs live in it.
-        self.query_one(f"#{SIDE_COLUMN_ID}").display = (
-            full or not self._view.side_hidden
+        # The compact overlay replaces the list with the side column.
+        self.query_one(f"#{LIST_PANEL_ID}").display = not (
+            full or self._view.side_overlay
         )
+        # `z` hides the whole side column, but full-view logs live in it.
+        self.query_one(f"#{SIDE_COLUMN_ID}").display = full or self._view.side_visible
         self.query_one(f"#{DETAIL_PANE_ID}").display = not full
         active = self.query_one(TabbedContent).active
         self.query_one(f"#{LAYERS_PANEL_ID}").display = active == TabID.IMAGES

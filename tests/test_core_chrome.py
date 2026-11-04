@@ -11,6 +11,7 @@ from docksurf_py.core.render.chrome import (
     HintContext,
     TabSummary,
     bottom_bar,
+    compact_list_title,
     global_counts,
     key_hints,
     list_title,
@@ -26,6 +27,13 @@ from tests.test_compose import make_container
 def plain(markup: str) -> str:
     """Rendered text with each chip's padding collapsed (` s  stop` -> `s stop`)."""
     return " ".join(Text.from_markup(markup).plain.split())
+
+
+def lines(markup: str) -> list[str]:
+    """`plain`, one entry per line of a multi-line bar."""
+    return [
+        " ".join(line.split()) for line in Text.from_markup(markup).plain.split("\n")
+    ]
 
 
 def raw(markup: str) -> str:
@@ -147,6 +155,42 @@ class TopBarTests(unittest.TestCase):
     def test_context_is_escaped(self) -> None:
         out = top_bar(_tabs(), TabID.CONTAINERS, "[bold]x", "live", "tide", P)
         self.assertIn("\\[bold]x", out)
+
+
+class CompactTopBarTests(unittest.TestCase):
+    def test_compact_has_a_logo_only_and_digit_tabs(self) -> None:
+        out = plain(
+            top_bar(
+                _tabs(), TabID.CONTAINERS, "default", "live", "tide", P, compact=True
+            )
+        )
+        self.assertIn("◆", out)
+        self.assertNotIn("docksurf", out)
+        self.assertIn("1 Containers 15", out)
+        self.assertNotIn("Images", out)
+        self.assertIn(" 2 ", out)
+        self.assertIn("default", out)
+        self.assertIn("● live", out)
+
+    def test_wide_keeps_the_full_logo(self) -> None:
+        out = plain(top_bar(_tabs(), TabID.CONTAINERS, "default", "live", "tide", P))
+        self.assertIn("◆ docksurf", out)
+
+    def test_compact_fits_80_columns(self) -> None:
+        out = raw(
+            top_bar(
+                _tabs(),
+                TabID.CONTAINERS,
+                "default",
+                "live",
+                "tide",
+                P,
+                compact=True,
+                width=78,
+            )
+        )
+        self.assertEqual(len(out), 78)
+        self.assertIn("● live", out)
 
 
 class KeyHintsTests(unittest.TestCase):
@@ -344,6 +388,63 @@ class BottomBarTests(unittest.TestCase):
 
     def test_global_hints_constant_is_stable(self) -> None:
         self.assertEqual([k for k, _ in GLOBAL_HINTS], ["/", "?", "^p"])
+
+
+class CompactBottomBarTests(unittest.TestCase):
+    COUNTS = GlobalCounts(2, 12, 1, 58, 21)
+    HINTS = [("s", "stop"), ("x", "restart"), ("l", "logs"), ("e", "shell")]
+
+    def _lines(self, **kw) -> list[str]:
+        return lines(bottom_bar(self.HINTS, self.COUNTS, P, compact=True, **kw))
+
+    def test_two_lines_counts_above_hints(self) -> None:
+        counts, hints = self._lines(width=78)
+        self.assertEqual(counts, "● 2 ○ 12 ✕ 1 │ 58 img · 21 orphan vols")
+        self.assertEqual(hints, "s stop x restart l logs e shell ? more")
+
+    def test_hints_are_dropped_with_an_ellipsis_but_more_stays(self) -> None:
+        _, hints = self._lines(width=30)
+        self.assertLessEqual(len(hints), 30)
+        self.assertTrue(hints.startswith("s stop"))
+        self.assertTrue(hints.endswith("… ? more"))
+        self.assertNotIn("shell", hints)
+
+    def test_no_ellipsis_when_everything_fits(self) -> None:
+        self.assertNotIn("…", self._lines(width=200)[1])
+
+    def test_filtering_has_no_more_hint(self) -> None:
+        out = bottom_bar(
+            [("esc", "done")], self.COUNTS, P, global_hints=(), compact=True
+        )
+        self.assertNotIn("more", plain(out))
+
+    def test_offline_message_replaces_the_counts_line(self) -> None:
+        counts, _ = self._lines(message="daemon is not running")
+        self.assertEqual(counts, "● daemon is not running")
+
+    def test_no_counts_before_the_first_snapshot(self) -> None:
+        out = lines(bottom_bar(self.HINTS, None, P, compact=True))
+        self.assertEqual(out[0], "")
+
+    def test_wide_is_still_one_line(self) -> None:
+        self.assertNotIn("\n", bottom_bar(self.HINTS, self.COUNTS, P, width=200))
+
+
+class CompactListTitleTests(unittest.TestCase):
+    def test_containers_show_up_and_failed(self) -> None:
+        self.assertEqual(
+            compact_list_title(TabID.CONTAINERS, 15, 2, 1),
+            "containers · 2 up · 1 failed",
+        )
+
+    def test_failed_is_omitted_when_zero(self) -> None:
+        self.assertEqual(
+            compact_list_title(TabID.CONTAINERS, 15, 2, 0), "containers · 2 up"
+        )
+
+    def test_other_tabs_show_the_count(self) -> None:
+        self.assertEqual(compact_list_title(TabID.IMAGES, 58), "images · 58")
+        self.assertEqual(compact_list_title(TabID.NETWORKS, 6), "networks · 6")
 
 
 class ListTitleTests(unittest.TestCase):

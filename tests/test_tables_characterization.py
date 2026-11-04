@@ -434,7 +434,7 @@ def _scenarios() -> dict[str, tuple[TabID, Callable[[], DockerSnapshot], Scenari
 class GoldenTableTests(unittest.IsolatedAsyncioTestCase):
     async def _render(self, tab, snapshot_fn, scenario) -> dict[str, Any]:
         app = DockSurfApp(docker=MockDockerService(snapshot_fn))
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(160, 40)) as pilot:
             await pilot.pause()
             await _open(app, pilot, tab)
             await scenario(app, pilot)

@@ -68,9 +68,13 @@ def _tab_text(t: TabSummary, with_label: bool) -> str:
 
 
 def _tabs_markup(
-    tabs: Sequence[TabSummary], active: TabID, p: Palette, compact: bool
+    tabs: Sequence[TabSummary],
+    active: TabID,
+    p: Palette,
+    compact: bool,
+    short_logo: bool = False,
 ) -> str:
-    left = [pill(p, "◆ docksurf", "accent")]
+    left = [pill(p, "◆" if short_logo else "◆ docksurf", "accent")]
     for t in tabs:
         is_active = t.tab == active
         text = _tab_text(t, with_label=is_active or not compact)
@@ -91,10 +95,11 @@ def top_bar(
 ) -> SafeMarkup:
     """`◆ docksurf  [1 Containers 15] 2 Images 58 …   context  ● live  M tide`.
 
-    Tabs carry `@click` actions so they switch on click. In `compact` mode only
-    the active tab keeps its label. With a `width`, the right side is pushed
-    to the edge; if it can't fit, it is trimmed piece by piece (theme, then
-    context), and only then are the inactive tab labels collapsed to numbers —
+    Tabs carry `@click` actions so they switch on click. In `compact` mode the
+    logo shrinks to `◆` and only the active tab keeps its label. With a
+    `width`, the right side is pushed to the edge; if it can't fit, it is
+    trimmed piece by piece (theme, then context), and only then are the
+    inactive tab labels collapsed to numbers —
     the connection state is never dropped while there is any room for it.
     """
     conn: str = {
@@ -113,17 +118,17 @@ def top_bar(
         candidates = [[conn, theme_part], [conn]]
 
     if width <= 0:
-        left = _tabs_markup(tabs, active, p, compact)
+        left = _tabs_markup(tabs, active, p, compact, compact)
         return SafeMarkup(f"{left}   {'  '.join(candidates[0])}")
     for tabs_compact in (False, True) if not compact else (True,):
-        left = _tabs_markup(tabs, active, p, tabs_compact)
+        left = _tabs_markup(tabs, active, p, tabs_compact, compact)
         used = _cells(left)
         for right_parts in candidates:
             right = "  ".join(right_parts)
             if used + _BAR_GAP + _cells(right) <= width:
                 pad = width - used - _cells(right)
                 return SafeMarkup(f"{left}{' ' * pad}{right}")
-    return SafeMarkup(_tabs_markup(tabs, active, p, True))
+    return SafeMarkup(_tabs_markup(tabs, active, p, True, compact))
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +278,55 @@ def _counts_markup(c: GlobalCounts, p: Palette) -> str:
     )
 
 
+def _compact_counts_markup(c: GlobalCounts, p: Palette) -> str:
+    def part(role: str, text: str, n: int) -> str:
+        return fg(p, role if n else "muted", text)
+
+    return (
+        f"{part('success', f'● {c.up}', c.up)} "
+        f"{part('muted', f'○ {c.down}', c.down)} "
+        f"{part('error', f'✕ {c.failed}', c.failed)} {fg(p, 'faint', '│')} "
+        f"{fg(p, 'muted', f'{c.images} img')} {fg(p, 'faint', '·')} "
+        f"{part('warning', f'{c.orphaned_volumes} orphan vols', c.orphaned_volumes)}"
+    )
+
+
+def _compact_bottom_bar(
+    hints: Sequence[Hint],
+    counts: GlobalCounts | None,
+    p: Palette,
+    width: int,
+    message: str,
+    global_hints: Sequence[Hint],
+) -> SafeMarkup:
+    """Two lines for 80x24: the counts (or disconnect message) above the key
+    hints. Hints are dropped from the end, with `…`, until the line fits
+    beside `? more`, which is always kept (unless the filter owns the keys)."""
+    top: str = ""
+    if message:
+        top = fg(p, "error", f"● {message}")
+    elif counts is not None:
+        top = _compact_counts_markup(counts, p)
+    ctx = list(hints)
+    more = f"{key_chip(p, '?')} {fg(p, 'muted', 'more')}" if global_hints else ""
+
+    def build(dropped: bool) -> str:
+        parts = [_hint_markup(h, p) for h in ctx]
+        if dropped:
+            parts.append(fg(p, "faint", "…"))
+        if more:
+            parts.append(more)
+        return "  ".join(parts)
+
+    dropped = False
+    line = build(dropped)
+    while width > 0 and ctx and _cells(line) > width:
+        ctx.pop()
+        dropped = True
+        line = build(dropped)
+    return SafeMarkup(f"{top}\n{line}")
+
+
 def bottom_bar(
     hints: Sequence[Hint],
     counts: GlobalCounts | None,
@@ -280,12 +334,16 @@ def bottom_bar(
     width: int = 0,
     message: str = "",
     global_hints: Sequence[Hint] = GLOBAL_HINTS,
+    compact: bool = False,
 ) -> SafeMarkup:
     """Key hints on the left, global counts (or a disconnect `message`) on the
     right. With a `width`, hints are dropped from the end (global ones first)
     until the line fits; the right side is always kept.
     Drop order: the palette hint, then context hints from the end, then the
-    remaining global hints."""
+    remaining global hints. `compact` returns two lines instead (counts above
+    hints, see `_compact_bottom_bar`)."""
+    if compact:
+        return _compact_bottom_bar(hints, counts, p, width, message, global_hints)
     right: str
     if message:
         right = fg(p, "error", f"● {message}")
@@ -345,6 +403,22 @@ def list_title(
     if sort_state is not None:
         column, reverse = sort_state
         parts.append(f"sorted by {column.lower()} {'▾' if reverse else '▴'}")
+    return " · ".join(parts)
+
+
+def compact_list_title(
+    tab: TabID, count: int, up: int | None = None, failed: int = 0
+) -> str:
+    """The short panel title for 80x24: `containers · 2 up · 1 failed` (the
+    failed part only when there are any), `images · 58` on tabs with no run
+    state. `up` is None where it doesn't apply."""
+    parts = [_PLURALS[tab]]
+    if up is None:
+        parts.append(str(count))
+    else:
+        parts.append(f"{up} up")
+        if failed:
+            parts.append(f"{failed} failed")
     return " · ".join(parts)
 
 

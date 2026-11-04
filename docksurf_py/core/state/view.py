@@ -10,6 +10,9 @@ from docksurf_py.core.render.palette import TIDE_PALETTE, Palette
 # Below either bound the side column no longer fits next to the list.
 COMPACT_BELOW_WIDTH = 120
 COMPACT_BELOW_HEIGHT = 30
+# Leaving compact needs this much extra room, so dragging a window edge across
+# a threshold doesn't flap between layouts.
+HYSTERESIS = 2
 
 
 class LayoutMode(StrEnum):
@@ -28,7 +31,14 @@ class ViewState:
     connection_message: str = ""  # why we're offline; empty while live
 
     def layout_for(self, width: int, height: int) -> LayoutMode:
-        if width < COMPACT_BELOW_WIDTH or height < COMPACT_BELOW_HEIGHT:
+        """The layout a terminal of this size should use. Relative to the
+        current mode: going wide needs `HYSTERESIS` more cells than staying
+        wide does."""
+        margin = HYSTERESIS if self.layout is LayoutMode.COMPACT else 0
+        if (
+            width < COMPACT_BELOW_WIDTH + margin
+            or height < COMPACT_BELOW_HEIGHT + margin
+        ):
             return LayoutMode.COMPACT
         return LayoutMode.WIDE
 
@@ -43,6 +53,15 @@ class ViewState:
         self.side_overlay = False
         self.side_hidden = False
         return True
+
+    @property
+    def side_visible(self) -> bool:
+        """Whether the side column is on screen: shown by default in wide, and
+        only as the `z` overlay in compact. Streams only it displays must stop
+        while this is False."""
+        if self.layout is LayoutMode.COMPACT:
+            return self.side_overlay
+        return not self.side_hidden
 
     def toggle_side(self) -> bool:
         """`z`: flip the flag for the current layout; returns its new value."""

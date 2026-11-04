@@ -303,7 +303,7 @@ class LiveObservabilityAppTests(unittest.IsolatedAsyncioTestCase):
         svc = MockDockerService(lambda: snap)
         svc.stream_stats = lambda cid: _OneStatsStream()  # type: ignore[method-assign]
         app = DockSurfApp(docker=svc)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(160, 40)) as pilot:
             await pilot.pause()
             await wait_until(lambda: app._live.stats_target == "web", timeout=2.0)
             self.assertEqual(app._live.stats_target, "web")

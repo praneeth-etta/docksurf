@@ -16,6 +16,31 @@ class LayoutForTests(unittest.TestCase):
         self.assertEqual(v.layout_for(200, 60), LayoutMode.WIDE)
 
 
+class HysteresisTests(unittest.TestCase):
+    def test_wide_drops_to_compact_exactly_at_the_threshold(self) -> None:
+        v = ViewState(layout=LayoutMode.WIDE)
+        self.assertEqual(v.layout_for(120, 30), LayoutMode.WIDE)
+        self.assertEqual(v.layout_for(119, 40), LayoutMode.COMPACT)
+        self.assertEqual(v.layout_for(160, 29), LayoutMode.COMPACT)
+
+    def test_compact_needs_extra_room_to_go_wide(self) -> None:
+        v = ViewState(layout=LayoutMode.COMPACT)
+        self.assertEqual(v.layout_for(120, 30), LayoutMode.COMPACT)
+        self.assertEqual(v.layout_for(121, 40), LayoutMode.COMPACT)
+        self.assertEqual(v.layout_for(160, 31), LayoutMode.COMPACT)
+        self.assertEqual(v.layout_for(122, 32), LayoutMode.WIDE)
+
+    def test_dragging_across_the_edge_does_not_flap(self) -> None:
+        v = ViewState()
+        modes = []
+        for w in (124, 121, 119, 120, 121, 122, 121, 120, 119):
+            v.resize(w, 40)
+            modes.append(v.layout)
+        W, C = LayoutMode.WIDE, LayoutMode.COMPACT
+        # widths:  124 121 119 120 121 122 121 120 119
+        self.assertEqual(modes, [W, W, C, C, C, W, W, W, C])
+
+
 class ToggleTests(unittest.TestCase):
     def test_defaults(self) -> None:
         v = ViewState()
@@ -40,6 +65,22 @@ class ToggleTests(unittest.TestCase):
         v = ViewState()
         self.assertTrue(v.toggle_logs_full())
         self.assertFalse(v.toggle_logs_full())
+
+
+class SideVisibleTests(unittest.TestCase):
+    def test_wide_shows_the_side_column_unless_hidden(self) -> None:
+        v = ViewState()
+        self.assertTrue(v.side_visible)
+        v.toggle_side()
+        self.assertFalse(v.side_visible)
+
+    def test_compact_shows_the_side_column_only_as_the_overlay(self) -> None:
+        v = ViewState(layout=LayoutMode.COMPACT)
+        self.assertFalse(v.side_visible)
+        v.toggle_side()
+        self.assertTrue(v.side_visible)
+        v.toggle_side()
+        self.assertFalse(v.side_visible)
 
 
 class ResizeTests(unittest.TestCase):
