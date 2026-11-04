@@ -63,6 +63,13 @@ class ViewState:
             return self.side_overlay
         return not self.side_hidden
 
+    @property
+    def live_enabled(self) -> bool:
+        """Whether the live stats panel can show: wide layout, side column on
+        screen. Compact drops it from the overlay to save rows, so its stats
+        stream never runs there."""
+        return self.layout is LayoutMode.WIDE and self.side_visible
+
     def toggle_side(self) -> bool:
         """`z`: flip the flag for the current layout; returns its new value."""
         if self.layout is LayoutMode.COMPACT:

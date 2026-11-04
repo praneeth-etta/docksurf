@@ -310,6 +310,18 @@ class KeyHintsTests(unittest.TestCase):
         self.assertNotIn("s", keys)
 
 
+class OverlayHintTests(unittest.TestCase):
+    def test_overlay_leads_with_the_way_back(self) -> None:
+        ctx = HintContext(TabID.CONTAINERS, "container_running", side_overlay=True)
+        hints = key_hints(ctx)
+        self.assertEqual(hints[0], ("z", "back to list"))
+        self.assertIn(("s", "stop"), hints)
+
+    def test_no_back_hint_outside_the_overlay(self) -> None:
+        ctx = HintContext(TabID.CONTAINERS, "container_running")
+        self.assertNotIn(("z", "back to list"), key_hints(ctx))
+
+
 class GlobalCountsTests(unittest.TestCase):
     def test_none_before_snapshot(self) -> None:
         self.assertIsNone(global_counts(None))

@@ -158,6 +158,7 @@ class HintContext:
     filtering: bool = False  # the filter input has focus and takes the keys
     # The focused image/volume/network has a container to jump to (`enter`).
     related: bool = False
+    side_overlay: bool = False  # compact: the side column covers the list
 
 
 Hint = tuple[str, str]
@@ -186,6 +187,8 @@ def key_hints(ctx: HintContext) -> list[Hint]:
             ("l", "close logs"),
         ]
     hints: list[Hint] = []
+    if ctx.side_overlay:
+        hints.append(("z", "back to list"))
     if ctx.has_marks:
         hints.append(("esc", "clear marks"))
     if ctx.tab == TabID.CONTAINERS:

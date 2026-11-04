@@ -86,10 +86,11 @@ class LiveStatsController(_Base):
 
     def _sync_stats(self) -> None:
         item = None
-        # No stream while the side column is hidden (`z`, or compact): nothing shows it.
+        # No stream while the live panel is off screen: the side column hidden
+        # (`z`), or compact, which has no live panel: nothing shows it.
         if (
             self.query_one(TabbedContent).active == TabID.CONTAINERS
-            and self._view.side_visible
+            and self._view.live_enabled
         ):
             item = self._get_focused_resource(TabID.CONTAINERS)
         target = self._live.stats_target_for(item)

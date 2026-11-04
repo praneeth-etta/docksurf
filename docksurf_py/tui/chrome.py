@@ -108,6 +108,11 @@ class ChromeController(_Base):
         self._sync_log_layout()
         self._retarget_side()
         self._repaint_chrome()
+        if self._view.layout is LayoutMode.COMPACT and not self._view.side_overlay:
+            # Back to the list: the table lost focus when it was hidden.
+            active = self.query_one(TabbedContent).active
+            entry = self._resource_registry[TabID(active)]
+            self.query_one(f"#{entry.table_id}").focus()
 
     def _sync_filter_row(self) -> None:
         """Compact hides the filter row to save a row; it comes back while the
@@ -311,6 +316,7 @@ class ChromeController(_Base):
             has_marks=self._tables.has_marks(active),
             compose=compose,
             filtering=self.query_one(f"#{SEARCH_BAR_ID}", SearchBar).has_focus,
+            side_overlay=self._view.side_overlay,
             related=isinstance(item, (Image, Volume, Network))
             and bool(related_containers(item, self.snapshot)),
         )

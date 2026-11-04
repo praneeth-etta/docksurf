@@ -52,6 +52,20 @@ BottomBar {
     display: block;
 }
 
+/* The `z` overlay: the side column replaces the list at full width. It only
+   ever shows then (or for full-view logs), so these rules need no state class. */
+.-compact #side-column {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    overflow-y: auto;
+}
+
+/* Panels keep a readable height; what doesn't fit scrolls (mouse wheel) instead
+   of being squeezed to a row. */
+.-compact #side-column > #endpoints-panel {
+    min-height: 8;
+}
 
 .panel {
     border: round $border;

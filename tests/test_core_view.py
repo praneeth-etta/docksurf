@@ -82,6 +82,16 @@ class SideVisibleTests(unittest.TestCase):
         v.toggle_side()
         self.assertFalse(v.side_visible)
 
+    def test_live_panel_is_wide_only(self) -> None:
+        wide = ViewState()
+        self.assertTrue(wide.live_enabled)
+        wide.toggle_side()
+        self.assertFalse(wide.live_enabled)
+        compact = ViewState(layout=LayoutMode.COMPACT)
+        compact.toggle_side()  # overlay on, but it has no live panel
+        self.assertTrue(compact.side_visible)
+        self.assertFalse(compact.live_enabled)
+
 
 class ResizeTests(unittest.TestCase):
     def test_no_change_reports_false_and_keeps_flags(self) -> None:

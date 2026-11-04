@@ -14,11 +14,19 @@ from docksurf_py.core.types import TabID
 from docksurf_py.tui.app import DockSurfApp
 from docksurf_py.tui.ids import (
     BOTTOM_BAR_ID,
+    DETAIL_PANE_ID,
+    DISK_PANEL_ID,
+    ENDPOINTS_PANEL_ID,
+    LAYERS_PANEL_ID,
     LIST_PANEL_ID,
     LIST_TOOLBAR_ID,
+    LIVE_PANEL_ID,
+    LOG_PANE_ID,
     SEARCH_BAR_ID,
+    SIDE_COLUMN_ID,
     TOOLBAR_LINE_ID,
     TOP_BAR_ID,
+    TOPOLOGY_PANEL_ID,
     TableID,
 )
 from docksurf_py.tui.widgets import BottomBar, SearchBar, TopBar
@@ -359,3 +367,162 @@ class CompactChromeTests(unittest.IsolatedAsyncioTestCase):
             await wait_until(lambda: app._view.layout == LayoutMode.WIDE)
             await pilot.pause()
             self.assertTrue(line.display)
+
+
+def _title(app: DockSurfApp, widget_id: str) -> str:
+    return Text.from_markup(str(app.query_one(f"#{widget_id}").border_title)).plain
+
+
+class SideOverlayTests(unittest.IsolatedAsyncioTestCase):
+    """Compact `z`: the side column replaces the list, `z`/escape goes back."""
+
+    async def _open_on(self, app: DockSurfApp, pilot, row: int) -> DataTable:
+        table = await _ready(app, pilot)
+        table.move_cursor(row=row)  # 2 = web (running)
+        await pilot.pause()
+        return table
+
+    async def test_z_swaps_the_list_for_the_card_and_logs(self) -> None:
+        svc = _svc()
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self._open_on(app, pilot, 2)
+            await pilot.press("z")
+            await wait_until(lambda: app._live.log_target == "web", timeout=3.0)
+            side = app.query_one(f"#{SIDE_COLUMN_ID}")
+            self.assertTrue(app._view.side_overlay)
+            self.assertTrue(side.display)
+            self.assertFalse(app.query_one(f"#{LIST_PANEL_ID}").display)
+            self.assertIn("web", _title(app, DETAIL_PANE_ID))
+            self.assertTrue(app.query_one(f"#{LOG_PANE_ID}").display)
+            # Full width, and the live panel is dropped.
+            self.assertEqual(side.size.width, app.size.width - 2)
+            self.assertFalse(app.query_one(f"#{LIVE_PANEL_ID}").display)
+            hints = " ".join(str(app.query_one(f"#{BOTTOM_BAR_ID}").content).split())
+            self.assertIn("z back to list", hints)
+
+    async def test_no_stats_stream_ever_runs_in_compact(self) -> None:
+        svc = _svc()
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self._open_on(app, pilot, 2)
+            await pilot.press("z")
+            await wait_until(lambda: app._live.log_target == "web", timeout=3.0)
+            await pilot.press("down")
+            await pilot.pause(0.6)
+            self.assertNotIn("stream_stats", _stream_calls(svc))
+            self.assertIsNone(app._live.stats_target)
+
+    async def test_escape_returns_to_the_list_and_stops_the_logs(self) -> None:
+        svc = _svc()
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(80, 24)) as pilot:
+            table = await self._open_on(app, pilot, 2)
+            await pilot.press("z")
+            await wait_until(lambda: app._live.log_target == "web", timeout=3.0)
+            await pilot.press("escape")
+            await wait_until(lambda: app._live.log_target is None, timeout=3.0)
+            self.assertFalse(app._view.side_overlay)
+            self.assertFalse(app.query_one(f"#{SIDE_COLUMN_ID}").display)
+            self.assertTrue(app.query_one(f"#{LIST_PANEL_ID}").display)
+            await wait_until(lambda: table.has_focus, timeout=2.0)
+            self.assertEqual(table.cursor_row, 2)
+
+    async def test_z_again_also_returns(self) -> None:
+        app = DockSurfApp(docker=_svc())
+        async with app.run_test(size=(80, 24)) as pilot:
+            table = await self._open_on(app, pilot, 2)
+            await pilot.press("z")
+            await pilot.pause()
+            await pilot.press("z")
+            await wait_until(lambda: table.has_focus, timeout=2.0)
+            self.assertFalse(app._view.side_overlay)
+            self.assertTrue(app.query_one(f"#{LIST_PANEL_ID}").display)
+
+    async def test_escape_closes_the_overlay_before_clearing_marks(self) -> None:
+        app = DockSurfApp(docker=_svc())
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self._open_on(app, pilot, 3)
+            await pilot.press("space")
+            await pilot.pause()
+            self.assertTrue(app._tables.has_marks(TabID.CONTAINERS))
+            await pilot.press("z")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(app._view.side_overlay)
+            self.assertTrue(app._tables.has_marks(TabID.CONTAINERS))
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(app._tables.has_marks(TabID.CONTAINERS))
+
+    async def test_l_goes_straight_to_full_view_logs(self) -> None:
+        svc = _svc()
+        app = DockSurfApp(docker=svc)
+        async with app.run_test(size=(80, 24)) as pilot:
+            table = await self._open_on(app, pilot, 2)
+            await pilot.press("l")
+            await wait_until(lambda: app._live.log_target == "web", timeout=3.0)
+            self.assertTrue(app._view.logs_full)
+            self.assertFalse(app._view.side_overlay)
+            self.assertTrue(app.query_one(f"#{SIDE_COLUMN_ID}").display)
+            self.assertTrue(app.query_one(f"#{LOG_PANE_ID}").display)
+            self.assertFalse(app.query_one(f"#{LIST_PANEL_ID}").display)
+            await pilot.press("escape")
+            await wait_until(lambda: app._live.log_target is None, timeout=3.0)
+            self.assertFalse(app.query_one(f"#{SIDE_COLUMN_ID}").display)
+            self.assertTrue(app.query_one(f"#{LIST_PANEL_ID}").display)
+            await wait_until(lambda: table.has_focus, timeout=2.0)
+
+    async def test_resizing_to_wide_closes_the_overlay(self) -> None:
+        app = DockSurfApp(docker=_svc())
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self._open_on(app, pilot, 2)
+            await pilot.press("z")
+            await pilot.pause()
+            await pilot.resize_terminal(160, 40)
+            await wait_until(lambda: app._view.layout == LayoutMode.WIDE)
+            await pilot.pause()
+            self.assertFalse(app._view.side_overlay)
+            self.assertTrue(app.query_one(f"#{LIST_PANEL_ID}").display)
+            self.assertTrue(app.query_one(f"#{SIDE_COLUMN_ID}").display)
+            await wait_until(lambda: app._live.stats_target == "web", timeout=3.0)
+
+    async def test_overlay_shows_each_tabs_extra_panels(self) -> None:
+        app = DockSurfApp(docker=MockDockerService(_full_snapshot))
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            await wait_until(lambda: app.snapshot is not None)
+            await pilot.press("z")
+            await pilot.pause()
+            expected = {
+                "2": (LAYERS_PANEL_ID,),
+                "3": (DISK_PANEL_ID,),
+                "4": (TOPOLOGY_PANEL_ID, ENDPOINTS_PANEL_ID),
+            }
+            every = {
+                LAYERS_PANEL_ID,
+                DISK_PANEL_ID,
+                TOPOLOGY_PANEL_ID,
+                ENDPOINTS_PANEL_ID,
+            }
+            for key, shown in expected.items():
+                await pilot.press(key)
+                await wait_until(
+                    lambda: (
+                        app.query_one(TabbedContent).active
+                        == {"2": TabID.IMAGES, "3": TabID.VOLUMES, "4": TabID.NETWORKS}[
+                            key
+                        ]
+                    )
+                )
+                await pilot.pause()
+                self.assertTrue(app._view.side_overlay)
+                self.assertFalse(app.query_one(f"#{LIST_PANEL_ID}").display)
+                self.assertTrue(app.query_one(f"#{DETAIL_PANE_ID}").display)
+                for panel_id in every:
+                    self.assertEqual(
+                        app.query_one(f"#{panel_id}").display,
+                        panel_id in shown,
+                        f"{panel_id} on tab {key}",
+                    )
